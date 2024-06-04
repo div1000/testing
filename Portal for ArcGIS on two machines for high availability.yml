@@ -1,0 +1,2650 @@
+---
+Description: 'ArcGIS CloudFormation Template: Provisions Portal for ArcGIS in highly
+  available mode. **WARNING** You will be billed by AWS for the AWS resources if you
+  create a stack from this template.'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Amazon EC2 Configuration
+      Parameters:
+      - PlatformType
+      - AMIId
+      - KeypairName
+    - Label:
+        default: Amazon VPC Configuration
+      Parameters:
+      - VPCId
+      - Subnet1
+      - Subnet2
+    - Label:
+        default: Domain Name System (DNS) Configuration
+      Parameters:
+      - SiteDomain
+      - ELBDNSName
+    - Label:
+        default: Portal for ArcGIS Configuration
+      Parameters:
+      - InstanceType
+      - InstanceDriveSize
+      - DeploymentBucket
+      - PortalLicenseFileKeyName
+      - UserLicenseTypeId
+      - SiteadminUserName
+      - SiteadminUserPassword
+      - arcgisUserPassword
+      - ConfigStoreType
+      - FileserverInstanceType
+      - FileserverInstanceDriveSize
+      - PortalWebadaptorName
+      - SSLCertificateFileKeyName
+      - SSLCertificatePassword
+    ParameterLabels:
+      PlatformType:
+        default: Platform Type (Required)
+      AMIId:
+        default: EC2 Instance AMI ID (Optional)
+      KeypairName:
+        default: EC2 Instance Keypair Name (Required)
+      VPCId:
+        default: VPC ID (Required)
+      Subnet1:
+        default: Subnet ID 1 (Required)
+      Subnet2:
+        default: Subnet ID 2 (Required)
+      ELBDNSName:
+        default: Elastic Load Balancer DNS Name (Optional)
+      InstanceType:
+        default: EC2 Instance Type (Required)
+      InstanceDriveSize:
+        default: EC2 Instance Root Drive Disk Space (Required)
+      DeploymentBucket:
+        default: Deployment Bucket Name (Required)
+      PortalLicenseFileKeyName:
+        default: Portal License File Name (Required)
+      UserLicenseTypeId:
+        default: User License Type ID (Optional)
+      SiteadminUserName:
+        default: Portal Administrator User Name (Required)
+      SiteadminUserPassword:
+        default: Portal Administrator User Password (Required)
+      arcgisUserPassword:
+        default: Windows 'arcgis' User Password (Conditional)
+      ConfigStoreType:
+        default: Content Store Type (Required)
+      FileserverInstanceType:
+        default: ArcGIS File Server Instance Type (Conditional)
+      FileserverInstanceDriveSize:
+        default: ArcGIS File Server EC2 Instance Root Drive Disk Space (Conditional)
+      SiteDomain:
+        default: Portal for ArcGIS Domain Name (Required)
+      PortalWebadaptorName:
+        default: Web Adaptor Name (Optional)
+      SSLCertificateFileKeyName:
+        default: SSL Certificate File Name (Optional)
+      SSLCertificatePassword:
+        default: SSL Certificate Password (Conditional)
+Parameters:
+  PlatformType:
+    Type: String
+    AllowedPattern: "(^Windows$|^Linux$)"
+    AllowedValues:
+    - Windows
+    - Linux
+    ConstraintDescription: You must specify platform type.
+    Description: Choose the platform type. Supported platform types are Windows and
+      Linux. For supported operating systems refer to https://enterprise.arcgis.com/en/server/latest/cloud/amazon/enterprise-aws-supported-os.htm.
+  AMIId:
+    Type: String
+    Default: ''
+    AllowedPattern: "(^$|^ami-[a-z0-9]*$|^\\{\\{resolve:ssm:[a-zA-Z0-9_./-]*:\\d\\}\\}$)"
+    ConstraintDescription: The AMI ID value can be empty, or it can be an actual AMI
+      ID or AWS SSM paramter name in the format '{{resolve:ssm:[a-zA-Z0-9_.-/]+:\d+}}'.
+    Description: If you are not sure which AMI to use, leave this field empty and
+      the template will use the latest AMI ID for Windows Server 2019 or Ubuntu Server
+      18.04 LTS based on the platform type you selected. If you prefer to use AMI
+      of your choice, then you can provide an EC2 instance AMI id in this format 'ami-xxxxxxx'.
+      If you have stored AMI ID in AWS SSM Parameter store, then provide name in this
+      format '{{resolve:ssm:[a-zA-Z0-9_.-/]+:\d+}}'.
+  KeypairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    AllowedPattern: "^[\\S]+(?: +[\\S]+)*$"
+    ConstraintDescription: The name can include up to 255 ASCII characters. It cannot
+      include leading or trailing spaces.
+    Description: Choose an EC2 KeyPair to allow remote access to the EC2 instances.
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    AllowedPattern: "^vpc-[a-z0-9]*$"
+    ConstraintDescription: Must start with 'vpc-' and can contain alphanumeric lowercase
+      characters only.
+    Description: 'Choose a VPC ID. Note: All ArcGIS Enterprise components that are
+      part of same deployment must be deployed in the same VPC.'
+  Subnet1:
+    Type: AWS::EC2::Subnet::Id
+    AllowedPattern: "^subnet-[a-z0-9]*$"
+    ConstraintDescription: Must start with 'subnet-' and can contain alphanumeric
+      lowercase characters only.
+    Description: Choose a subnet ID. The subnet ID that you select must be within
+      the VPC you have selected above.
+  Subnet2:
+    Type: AWS::EC2::Subnet::Id
+    AllowedPattern: "^subnet-[a-z0-9]*$"
+    ConstraintDescription: Must start with 'subnet-', contain alphanumeric lowercase
+      characters only.
+    Description: Choose a second subnet ID. This must be a different subnet ID than
+      you used for Subnet ID 1. The subnet Id that you select must be within the VPC
+      you have selected above.
+  SiteDomain:
+    Type: String
+    AllowedPattern: "^(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9]).)*([a-zA-Z]|[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9])$"
+    ConstraintDescription: The domain name is invalid.
+    Description: Provide the fully qualified domain name for the portal. The domain
+      name must already exist and be resolvable. For example, test.abc.com. Contact
+      your IT administrator if you are not sure what domain name to use.
+  ELBDNSName:
+    Type: String
+    Default: ''
+    AllowedPattern: "(^$|^(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9]).)*([a-zA-Z]|[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9]).elb.amazonaws.com$)"
+    ConstraintDescription: Invalid elastic load balancer DNS name. It can be an empty
+      string or a valid ELB DNS name.
+    Description: To use an elastic load balancer (ELB) with the deployment, provide
+      the value for an application or classic ELB DNS Name. This ELB must already
+      exist. If you do not want to use an ELB or want to configure it by yourself
+      later, then leave this field empty. You can get the ELB DNS name by navigating
+      to the Load Balancers section of the EC2 service within the AWS Management Console
+      or, if you used an Esri CloudFormation template to create the ELB, you can get
+      it from that template's output parameters. Valid ELB DNS name must end with
+      '.elb.amazonaws.com'.
+  InstanceType:
+    Type: String
+    Default: m5.2xlarge
+    AllowedValues:
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - c4.xlarge
+    - c4.2xlarge
+    - c4.4xlarge
+    - c4.8xlarge
+    - c5.2xlarge
+    - c5.4xlarge
+    - c5.9xlarge
+    - c5.18xlarge
+    - c5.xlarge
+    - c5n.xlarge
+    - c5n.2xlarge
+    - c5n.4xlarge
+    - c5n.9xlarge
+    - c5n.18xlarge
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - m4.16xlarge
+    - m5.xlarge
+    - m5.2xlarge
+    - m5.4xlarge
+    - m5.12xlarge
+    - m5.24xlarge
+    - m5.metal
+    - m5a.xlarge
+    - m5a.2xlarge
+    - m5a.4xlarge
+    - m5a.12xlarge
+    - m5a.24xlarge
+    - p3.2xlarge
+    - p3.8xlarge
+    - p3.16xlarge
+    - p3dn.24xlarge
+    - p4d.24xlarge
+    - g6.xlarge
+    - g6.2xlarge
+    - g6.4xlarge
+    - g6.8xlarge
+    - g6.16xlarge
+    - gr6.4xlarge
+    - gr6.8xlarge
+    - g6.12xlarge
+    - g6.24xlarge
+    - g6.48xlarge
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - r4.xlarge
+    - r4.2xlarge
+    - r4.4xlarge
+    - r4.8xlarge
+    - r4.16xlarge
+    - r5.xlarge
+    - r5.2xlarge
+    - r5.4xlarge
+    - r5.12xlarge
+    - r5.24xlarge
+    - r5.metal
+    - r5a.xlarge
+    - r5a.2xlarge
+    - r5a.4xlarge
+    - r5a.12xlarge
+    - r5a.24xlarge
+    - t2.xlarge
+    - t2.2xlarge
+    - t3.xlarge
+    - t3.2xlarge
+    - x1.16xlarge
+    - x1.32xlarge
+    - x1e.xlarge
+    - x1e.2xlarge
+    - x1e.4xlarge
+    - x1e.8xlarge
+    - x1e.16xlarge
+    - x1e.32xlarge
+    Description: Choose EC2 instance type. The default is m5.2xlarge.
+  InstanceDriveSize:
+    Type: Number
+    Default: 100
+    ConstraintDescription: Must be between 100 and 1024 GB.
+    Description: Provide size of the root drive in GB. Default is 100 GB. Minimum
+      is 100 GB. Maximum is 1024 GB.
+    MaxValue: 1024
+    MinValue: 100
+  DeploymentBucket:
+    Type: String
+    AllowedPattern: "^([a-z]|(\\d(?!\\d{0,2}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})))([a-z\\d]|(\\.(?!(\\.|-)))|(-(?!\\.))){1,61}[a-z\\d\\.]$"
+    ConstraintDescription: A bucket's name can be between 6 and 63 characters long,
+      it can contain lowercase characters, numbers, periods, and dashes, and it must
+      start with a lowercase letter or a number.
+    Description: Provide the name of the AWS S3 bucket that contains your software
+      license files and SSL certificates. This bucket must already exist and contain
+      the license file and SSL certificate for your deployment. You must be the owner
+      of the bucket and it must reside in the same account as your deployment.
+  PortalLicenseFileKeyName:
+    Type: String
+    AllowedPattern: "^([/\\w\\-\\.]+)+\\.(json)$"
+    ConstraintDescription: License file name must be alphanumeric. It can contain
+      dash ('-'), dot ('.'), and underscore ('_') characters. The file name must end
+      with '.json'.
+    Description: Provide the Portal for ArcGIS authorization file object key name.
+      You must upload the license file ('.json' file) to the deployment bucket before
+      launching this stack. You can get the file object key name by navigating to
+      the file within deployment bucket in the AWS S3 console. For example, 'portal.json'
+      or 'resources/licenses/portal/portal.json'.
+  UserLicenseTypeId:
+    Type: String
+    Default: ''
+    Description: Provide portal user license type ID. If you are not sure what type
+      to use, leave this field empty. In this case, 'temporary' user license type
+      ID is used. You must change it later after creating the deployment.
+  SiteadminUserName:
+    Type: String
+    Default: siteadmin
+    AllowedPattern: "^[a-zA-Z][a-zA-Z0-9_]{6,}$"
+    ConstraintDescription: User name must be 6 or more alphanumeric or underscore
+      (_) characters and must start with a letter.
+    Description: Provide a user name for the initial portal administrator. The name
+      must be 6 or more alphanumeric or underscore (_) characters and must start with
+      a letter.
+    MinLength: 6
+  SiteadminUserPassword:
+    Type: String
+    AllowedPattern: "(^arn:(aws[a-zA-Z-]*)?:secretsmanager:[a-z]{2}((-gov)|(-iso(b?)))?-[a-z]+-\\d{1}:\\d{12}:secret:[a-zA-Z0-9-/_+=.@]*$|^[a-zA-Z0-9_.@]{8,}$)"
+    ConstraintDescription: Password must be 8 or more alphanumeric, underscore (_),
+      at ('@'), or dot (.) characters.
+    Description: Provide a password for the portal administrator. You can either type
+      a plain text password or the ARN of your secret ID from AWS Secret Manager.
+      The password must be 8 or more alphanumeric characters and can contain underscore
+      (_), at ('@'), or dot (.) characters. It's a best practice to manage your passwords/secrets
+      through AWS Secret Manager.
+    MinLength: 8
+  arcgisUserPassword:
+    Type: String
+    Default: ''
+    AllowedPattern: "(^$|^arn:(aws[a-zA-Z-]*)?:secretsmanager:[a-z]{2}((-gov)|(-iso(b?)))?-[a-z]+-\\d{1}:\\d{12}:secret:[a-zA-Z0-9-/_+=.@]*$|(?!.*arcgis)(?!.*Arc)(?!.*GIS)(?!.*user)(?!.*account)^((?=.*[a-z])(?=.*[A-Z])(?=.*\\d)|(?=.*[a-z])(?=.*[A-Z])(?=.*[^A-Za-z0-9])|(?=.*[a-z])(?=.*\\d)(?=.*[^A-Za-z0-9])|(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]))([A-Za-z\\d@#$%&�*\\-_+=\\[\\]{}|:\\',?~();!]|\\.(?!@)){8,}$)"
+    ConstraintDescription: 'Password must be at least eight characters in length and
+      must contain characters from three of the following four categories: English
+      uppercase characters (A through Z), English lowercase characters (a through
+      z), digits (0 through 9), non-alphabetic characters (for example, !, $, #, %).
+      Password must not contain backslashes (\) or quotation marks ("). Password must
+      not contain the user''s account name (arcgis) or parts of the user''s full name
+      (ArcGIS user account) that exceed two consecutive characters.'
+    Description: This password is only required if you deploy on Windows. Enter a
+      password for the 'arcgis' user. You can either enter a plain text password or
+      the ARN of your secret ID from AWS Secret Manager. It's a best practice to manage
+      your passwords/secrets through AWS Secret Manager. Refer to Microsoft Windows
+      documentation for password policies.
+  ConfigStoreType:
+    Type: String
+    Default: FileSystem
+    AllowedPattern: "(^FileSystem$|^CloudStore$)"
+    AllowedValues:
+    - FileSystem
+    - CloudStore
+    Description: Choose the portal content store type. Default is 'FileSystem'.
+  FileserverInstanceType:
+    Type: String
+    Default: m5.2xlarge
+    AllowedValues:
+    - c3.large
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - c4.large
+    - c4.xlarge
+    - c4.2xlarge
+    - c4.4xlarge
+    - c4.8xlarge
+    - c5.xlarge
+    - c5.2xlarge
+    - c5.4xlarge
+    - c5.9xlarge
+    - c5.18xlarge
+    - c5.xlarge
+    - c5n.xlarge
+    - c5n.2xlarge
+    - c5n.4xlarge
+    - c5n.9xlarge
+    - c5n.18xlarge
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - m4.16xlarge
+    - m5.large
+    - m5.xlarge
+    - m5.2xlarge
+    - m5.4xlarge
+    - m5.12xlarge
+    - m5.24xlarge
+    - m5.metal
+    - m5a.large
+    - m5a.xlarge
+    - m5a.2xlarge
+    - m5a.4xlarge
+    - m5a.12xlarge
+    - m5a.24xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - r4.large
+    - r4.xlarge
+    - r4.2xlarge
+    - r4.4xlarge
+    - r4.8xlarge
+    - r4.16xlarge
+    - r5.large
+    - r5.xlarge
+    - r5.2xlarge
+    - r5.4xlarge
+    - r5.12xlarge
+    - r5.24xlarge
+    - r5.metal
+    - r5a.large
+    - r5a.xlarge
+    - r5a.2xlarge
+    - r5a.4xlarge
+    - r5a.12xlarge
+    - r5a.24xlarge
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+    - t3.large
+    - t3.xlarge
+    - t3.2xlarge
+    - x1.16xlarge
+    - x1.32xlarge
+    - x1e.xlarge
+    - x1e.2xlarge
+    - x1e.4xlarge
+    - x1e.8xlarge
+    - x1e.16xlarge
+    - x1e.32xlarge
+    Description: Choose an EC2 instance type. This is required only if you have specified
+      'FileSystem' for the portal content store type. The default is m5.2xlarge.
+  FileserverInstanceDriveSize:
+    Type: Number
+    Default: 200
+    ConstraintDescription: Must be between 100 and 1024 GB.
+    Description: The size of the root drive in GB. This is required only if you have
+      specified 'FileSystem' for the portal content store type. The default is 200
+      GB. Minimum is 100 GB. Maximum is 1024 GB.
+    MaxValue: 1024
+    MinValue: 100
+  PortalWebadaptorName:
+    Type: String
+    Default: ''
+    AllowedPattern: "(^$|^[a-zA-Z][a-zA-Z0-9]*$)"
+    ConstraintDescription: Webadaptor name is invalid. It must begin with a letter
+      and contain only alphanumeric characters.
+    Description: If you want to use an ArcGIS Web Adaptor with the portal, type a
+      web adaptor name. Access to the portal will be through a URL in the format 'https://<fully
+      qualified domain name>/<web adaptor name>'. The name must begin with a letter
+      and contain only alphanumeric characters. Leave this field empty if you do not
+      want to use a web adaptor, and URLs for the site will be in the format 'https://<fully
+      qualified domain name>/arcgis'.
+    MaxLength: 48
+  SSLCertificateFileKeyName:
+    Type: String
+    Default: ''
+    AllowedPattern: "(^$|^([/\\w\\-\\.]+)+\\.(pfx)$)"
+    ConstraintDescription: SSLCertificateFileKeyName is invalid. It can be an empty
+      string or, if a key name is supplied, it must be alphanumeric and can contain
+      slash ('/'), dash ('-'), dot ('.'), and underscore ('_') characters. The file
+      name must end with '.pfx'
+    Description: If you include a web adaptor with Portal for ArcGIS, you can provide
+      an SSL certificate from a certifying authority (.pfx file). If you are providing
+      it, then you must upload the certificate to the deployment bucket before launching
+      this stack. If you use a web adaptor and leave this field empty, an autogenerated
+      self-signed certificate will be used with the web adpator. You can get the file
+      object key name by navigating to the file within the deployment bucket in AWS
+      S3 console. For example, 'domainname.pfx' or 'resources/sslcerts/domainname.pfx'.
+  SSLCertificatePassword:
+    Type: String
+    Default: ''
+    AllowedPattern: (^$|^arn:(aws[a-zA-Z-]*)?:secretsmanager:[a-z]{2}((-gov)|(-iso(b?)))?-[a-z]+-\d{1}:\d{12}:secret:[a-zA-Z0-9-/_+=.@]*$|[^\"]{1,128})
+    ConstraintDescription: sslcertificatepassword is invalid. It can be an empty string
+      or, if entered, the password must be between 1 and 128 characters and must not
+      contain backslashes (\) or quotation marks (").
+    Description: If you include a web adaptor with Portal for ArcGIS and use an SSL
+      certificate from a certifying authority, either type a plain text password or
+      ARN of your secret ID from AWS Secret Manager.
+Conditions:
+  AMICondition:
+    Fn::Equals:
+    - Ref: AMIId
+    - ''
+  WindowsAMI:
+    Fn::Equals:
+    - Ref: PlatformType
+    - Windows
+  UbuntuAMI:
+    Fn::Equals:
+    - Ref: PlatformType
+    - Linux
+  UseCloudStore:
+    Fn::Equals:
+    - Ref: ConfigStoreType
+    - CloudStore
+  UseFileSystem:
+    Fn::Equals:
+    - Ref: ConfigStoreType
+    - FileSystem
+  ELBDNSNameCondition:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: ELBDNSName
+      - ''
+  WebadaptorCondition:
+    Fn::Equals:
+    - Ref: PortalWebadaptorName
+    - ''
+Resources:
+  DeploymentLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+        - ''
+        - - "/ESRI/ArcGIS-Portal-HA/"
+          - Ref: AWS::StackName
+      RetentionInDays: 731
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  ArcGISEnterpriseIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+            - ssm.amazonaws.com
+            - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Path: "/"
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: Resource
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+  ArcGISEnterpriseIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Action:
+          - cloudformation:DescribeStacks
+          - cloudformation:DescribeStackResources
+          - cloudformation:DescribeStackResource
+          - cloudformation:DescribeStackEvents
+          - cloudformation:SignalResource
+          Effect: Allow
+          Resource: "*"
+        - Action:
+          - dynamodb:ListTables
+          - dynamodb:DescribeTable
+          - dynamodb:GetItem
+          - dynamodb:GetRecords
+          - dynamodb:Query
+          - dynamodb:CreateTable
+          - dynamodb:DeleteItem
+          - dynamodb:DeleteTable
+          - dynamodb:PutItem
+          - dynamodb:UpdateItem
+          - dynamodb:UpdateTable
+          Effect: Allow
+          Resource: "*"
+        - Action:
+          - ec2:CreateImage
+          - ec2:CreateTags
+          - ec2:DeleteTags
+          - ec2:DescribeAddresses
+          - ec2:DescribeImages
+          - ec2:DescribeInstances
+          - ec2:DescribeInstanceStatus
+          - ec2:DescribeInstanceTypes
+          - ec2:DescribeNetworkInterfaces
+          - ec2:DescribeRegions
+          - ec2:DescribeSubnets
+          - ec2:DescribeTags
+          - ec2:AuthorizeSecurityGroupEgress
+          - ec2:AuthorizeSecurityGroupIngress
+          - ec2:CreateNetworkInterface
+          - ec2:DeleteNetworkInterface
+          - ec2:ModifyNetworkInterfaceAttribute
+          - ec2:ModifyInstanceMetadataOptions
+          - ec2:RevokeSecurityGroupEgress
+          - ec2:RevokeSecurityGroupIngress
+          - ec2:StartInstances
+          - ec2:StopInstances
+          - ec2:RunInstances
+          - ec2:TerminateInstances
+          Effect: Allow
+          Resource: "*"
+        - Action:
+          - ec2messages:GetEndpoint
+          - ec2messages:GetMessages
+          - ec2messages:AcknowledgeMessage
+          - ec2messages:DeleteMessage
+          - ec2messages:FailMessage
+          - ec2messages:SendReply
+          Effect: Allow
+          Resource: "*"
+        - Action:
+          - elasticloadbalancing:ConfigureHealthCheck
+          - elasticloadbalancing:CreateLoadBalancerListeners
+          - elasticloadbalancing:CreateLoadBalancerPolicy
+          - elasticloadbalancing:CreateRule
+          - elasticloadbalancing:DeleteLoadBalancerListeners
+          - elasticloadbalancing:DeleteLoadBalancerPolicy
+          - elasticloadbalancing:DescribeLoadBalancers
+          - elasticloadbalancing:DescribeListeners
+          - elasticloadbalancing:DescribeLoadBalancerAttributes
+          - elasticloadbalancing:DescribeLoadBalancerPolicies
+          - elasticloadbalancing:DescribeRules
+          - elasticloadbalancing:DescribeTags
+          - elasticloadbalancing:DescribeTargetGroupAttributes
+          - elasticloadbalancing:DescribeTargetGroups
+          - elasticloadbalancing:DeleteRule
+          - elasticloadbalancing:DeregisterTargets
+          - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+          - elasticloadbalancing:ModifyListener
+          - elasticloadbalancing:ModifyLoadBalancerAttributes
+          - elasticloadbalancing:ModifyRule
+          - elasticloadbalancing:RegisterTargets
+          - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+          - elasticloadbalancing:SetLoadBalancerListenerSSLCertificate
+          - elasticloadbalancing:SetLoadBalancerPoliciesOfListener
+          - elasticloadbalancing:SetRulePriorities
+          Effect: Allow
+          Resource: "*"
+        - Action: iam:PassRole
+          Effect: Allow
+          Resource:
+            Fn::GetAtt:
+            - ArcGISEnterpriseIAMRole
+            - Arn
+        - Action:
+          - logs:DescribeLogGroups
+          - logs:DescribeLogStreams
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:PutMetricFilter
+          Effect: Allow
+          Resource: "*"
+        - Action:
+          - s3:ListBucket
+          - s3:ListMultipartUploadParts
+          - s3:GetBucketAcl
+          - s3:GetBucketLocation
+          - s3:GetBucketPolicy
+          - s3:GetObject
+          - s3:DeleteObjectTagging
+          - s3:PutBucketTagging
+          - s3:PutObjectTagging
+          - s3:CreateBucket
+          - s3:DeleteBucket
+          - s3:DeleteObject
+          - s3:PutObject
+          Effect: Allow
+          Resource: "*"
+        - Action: secretsmanager:GetSecretValue
+          Effect: Allow
+          Resource: "*"
+        - Action:
+          - ssm:ListAssociations
+          - ssm:ListInstanceAssociations
+          - ssm:DescribeAssociation
+          - ssm:DescribeDocument
+          - ssm:DescribeInstanceInformation
+          - ssm:GetDeployablePatchSnapshotForInstance
+          - ssm:GetDocument
+          - ssm:GetManifest
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:ListCommands
+          - ssm:ListCommandInvocations
+          - ssm:PutConfigurePackageResult
+          - ssm:DeleteAssociation
+          - ssm:PutComplianceItems
+          - ssm:PutInventory
+          - ssm:SendCommand
+          - ssm:StartAutomationExecution
+          - ssm:UpdateAssociationStatus
+          - ssm:UpdateInstanceAssociationStatus
+          - ssm:UpdateInstanceInformation
+          Effect: Allow
+          Resource: "*"
+        - Action:
+          - ssmmessages:CreateControlChannel
+          - ssmmessages:CreateDataChannel
+          - ssmmessages:OpenControlChannel
+          - ssmmessages:OpenDataChannel
+          Effect: Allow
+          Resource: "*"
+        Version: '2012-10-17'
+      PolicyName: ArcGISEnterpriseIAMPolicy
+      Roles:
+      - Ref: ArcGISEnterpriseIAMRole
+  ValidateInputAutomation:
+    Type: AWS::SSM::Document
+    Properties:
+      Content:
+        schemaVersion: '0.3'
+        description: Validates the input prameter for ArcGIS Enterprise and ArcGIS
+          Server stacks.
+        assumeRole: "{{ AutomationAssumeRole }}"
+        parameters:
+          AutomationAssumeRole:
+            type: String
+            description: "(Required) The ARN of the role that allows Automation to
+              perform the actions on your behalf."
+          PlatformType:
+            type: String
+            description: "(Required) Platform Type."
+            allowedValues:
+            - Windows
+            - Linux
+          VPCId:
+            type: String
+            description: "(Optional) VPC Id."
+            default: ''
+          Subnet1Id:
+            type: String
+            description: "(Optional) Subnet1 Id."
+            default: ''
+          Subnet2Id:
+            type: String
+            description: "(Optional) Subnet2 Id."
+            default: ''
+          AMIId:
+            type: String
+            description: "(Optional) AMI Id."
+            default: ''
+          EIPAllocationId:
+            type: String
+            description: "(Optional) EIP Allocation Id."
+            default: ''
+          ELBDNSName:
+            type: String
+            description: "(Optional) ELB DNS Name."
+            default: ''
+          InputELBType:
+            type: String
+            description: "(Optional) ELB Type."
+            default: ''
+          DeploymentBucketName:
+            type: String
+            description: "(Optional) Deployment Bucket Name."
+            default: ''
+          PortalLicenseFile:
+            type: String
+            description: "(Optional) Portal License File."
+            default: ''
+          ServerLicenseFile:
+            type: String
+            description: "(Optional) Server License File."
+            default: ''
+          SSLCertificateFile:
+            type: String
+            description: "(Optional) SSL Certificate File."
+            default: ''
+          SiteadminPasswordValue:
+            type: String
+            description: "(Optional) Site Admin Password Value."
+            default: ''
+          ArcGISUserPasswordValue:
+            type: String
+            description: "(Optional) ArcGIS User Password Value."
+            default: ''
+          SSLCertificatePasswordValue:
+            type: String
+            description: "(Optional) SSL Certificate Password Value."
+            default: ''
+          DeploymentLogs:
+            type: String
+            description: "(Required) AWS CloudWatch log group name."
+          StackName:
+            type: String
+            description: "(Required) AWS CloudFormation stack name."
+          WaitCondition:
+            type: String
+            description: "(Required) Wait condition for CloudFormation stack."
+        mainSteps:
+        - name: ValidateInputParameters
+          action: aws:executeScript
+          isEnd: true
+          inputs:
+            Runtime: PowerShell Core 6.0
+            Script: "$inputPayload = $env:InputPayload | ConvertFrom-Json;\r\n\r\n$StackName
+              = $inputPayload.StackName;\r\n$VPCId = $inputPayload.VPCId;\r\n$Subnet1Id
+              = $inputPayload.Subnet1Id;\r\n$Subnet2Id = $inputPayload.Subnet2Id;\r\n$PlatformType
+              = $inputPayload.PlatformType;\r\n$AMIId = $inputPayload.AMIId;\r\n$EIPAllocationId
+              = $inputPayload.EIPAllocationId;\r\n$ELBDNSName = $inputPayload.ELBDNSName;\r\n$InputELBType
+              = $inputPayload.InputELBType;\r\n$DeploymentBucketName = $inputPayload.DeploymentBucketName;\r\n$PortalLicenseFile
+              = $inputPayload.PortalLicenseFile;\r\n$ServerLicenseFile = $inputPayload.ServerLicenseFile;\r\n$SSLCertificateFile
+              = $inputPayload.SSLCertificateFile;\r\n$SiteadminPasswordValue = $inputPayload.SiteadminPasswordValue;\r\n$ArcGISUserPasswordValue
+              = $inputPayload.ArcGISUserPasswordValue;\r\n$SSLCertificatePasswordValue
+              = $inputPayload.SSLCertificatePasswordValue;\r\n$WaitCondition = $inputPayload.WaitCondition;\r\n$ActionName
+              = $inputPayload.ActionName;\r\n$LogGroupName = $inputPayload.LogGroupName;\r\n$global:RegionId
+              = $inputPayload.RegionId;\r\n\r\n$guid = New-Guid;\r\n$LogStreamName
+              = \"$guid/$ActionName/stderr\"\r\n$global:LogSequenceToken = \"\"\r\n[bool]
+              $global:ErrorFound = $false\r\n\r\nInstall-Module AWS.Tools.CloudFormation
+              -Force\r\nInstall-Module AWS.Tools.CloudWatchLogs -Force\r\nInstall-Module
+              AWS.Tools.EC2 -Force\r\nInstall-Module AWS.Tools.ElasticLoadBalancing
+              -Force\r\nInstall-Module AWS.Tools.ElasticLoadBalancingV2 -Force\r\nInstall-Module
+              AWS.Tools.S3 -Force\r\nInstall-Module AWS.Tools.SecretsManager -Force\r\n\r\nImport-Module
+              AWS.Tools.CloudFormation\r\nImport-Module AWS.Tools.CloudWatchLogs\r\nImport-Module
+              AWS.Tools.EC2\r\nImport-Module AWS.Tools.ElasticLoadBalancing\r\nImport-Module
+              AWS.Tools.ElasticLoadBalancingV2\r\nImport-Module AWS.Tools.S3\r\nImport-Module
+              AWS.Tools.SecretsManager\r\nfunction WriteErrorLog($errormessage) {\r\n
+              \ Write-Error $errormessage | format-list -force\r\n  if ([string]::IsNullOrEmpty($global:LogSequenceToken))
+              {\r\n    $splat = @{\r\n      LogGroupName = $LogGroupName\r\n      LogStreamName
+              =  $LogStreamName\r\n    }\r\n    New-CWLLogStream @splat -Region $global:RegionId\r\n\r\n
+              \   $logEntry = New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n    }\r\n
+              \   $global:LogSequenceToken = Write-CWLLogEvent @splat -Region $global:RegionId\r\n
+              \ } else {\r\n    $logEntry =  New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n      SequenceToken
+              = $global:LogSequenceToken\r\n    }\r\n    $global:LogSequenceToken
+              = Write-CWLLogEvent @splat -Region $global:RegionId\r\n  }\r\n  $global:ErrorFound
+              = $true\r\n  return $global:LogSequenceToken\r\n}\r\n\r\n#check for
+              subnets\r\nif (-not [string]::IsNullOrEmpty($VPCId)) {\r\n  try {\r\n
+              \   if ($Subnet1Id -eq $Subnet2Id) { \r\n      $global:LogSequenceToken
+              = WriteErrorLog(\"Subnet1 Id $Subnet1Id and Subnet2 Id $Subnet2Id cannot
+              be same.\")\r\n    }\r\n    if (-not [string]::IsNullOrEmpty($Subnet1Id))
+              {\r\n      $Subnet1 = (Get-EC2Subnet -SubnetId $Subnet1Id -Region $global:RegionId
+              | Where-Object {$_.VpcId -eq $VPCId}).SubnetId\r\n      if ([string]::IsNullOrEmpty($Subnet1))
+              {\r\n        $global:LogSequenceToken = WriteErrorLog(\"Subnet1 Id $Subnet1Id
+              does not belong to VPC Id $VPCId.\")\r\n      }\r\n    }\r\n    if (-not
+              [string]::IsNullOrEmpty($Subnet2Id)) {\r\n      $Subnet2 = (Get-EC2Subnet
+              -SubnetId $Subnet2Id -Region $global:RegionId | Where-Object {$_.VpcId
+              -eq $VPCId}).SubnetId\r\n      if ([string]::IsNullOrEmpty($Subnet2))
+              {\r\n        $global:LogSequenceToken = WriteErrorLog(\"Subnet2 Id $Subnet2Id
+              does not belong to VPC Id $VPCId.\")\r\n      }\r\n    }\r\n  } catch
+              {\r\n    Write-Error $_.Exception.Message | format-list -force\r\n    $global:LogSequenceToken
+              = WriteErrorLog($_.Exception.Message)\r\n  }\r\n}\r\n\r\n#check for
+              AMI Id\r\nif (-not [string]::IsNullOrEmpty($AMIId)) {\r\n  try {\r\n
+              \   $PlatformDetails = (Get-EC2Image -ImageId $AMIId -Region $global:RegionId).PlatformDetails\r\n
+              \   if (-not $PlatformDetails.ToLower().Contains($PlatformType.ToLower()))
+              {\r\n      $global:LogSequenceToken = WriteErrorLog(\"For specified
+              AMI Id $AMIId platform type is $PlatformDetails. It does not belong
+              to selected platform type $PlatformType. Choose correct platform type
+              or enter correct AMI Id.\")\r\n    }\r\n  } catch {\r\n    Write-Error
+              $_.Exception.Message | format-list -force\r\n    $global:LogSequenceToken
+              = WriteErrorLog($AMIId + \" : \" + $_.Exception.Message)\r\n  }\r\n}\r\n\r\n#check
+              for EIP\r\nif (-not [string]::IsNullOrEmpty($EIPAllocationId)) {\r\n
+              \ try {\r\n    $AllocationId = (Get-EC2Address -AllocationId $EIPAllocationId
+              -Region $global:RegionId).AllocationId\r\n    if ([string]::IsNullOrEmpty($AllocationId))
+              {\r\n      $global:LogSequenceToken = WriteErrorLog(\"EIP allocation
+              id $EIPAllocationId does not exists. Enter correct EIP allocation id.\")\r\n
+              \   }\r\n  } catch {\r\n    Write-Error $_.Exception.Message | format-list
+              -force\r\n    $global:LogSequenceToken = WriteErrorLog($EIPAllocationId
+              + \" : \" + $_.Exception.Message)\r\n  }\r\n}\r\n\r\n#check for ELB
+              DNS Name\r\nif (-not [string]::IsNullOrEmpty($ELBDNSName)) {\r\n  try
+              {\r\n    $ELBExists = $false\r\n    $ELBType = (Get-ELB2LoadBalancer
+              -Region $global:RegionId | Where-Object {$_.DNSName -eq $ELBDNSName}).Type.Value\r\n
+              \   if (-not [string]::IsNullOrEmpty($ELBType)) {\r\n      if ($ELBType
+              -eq $InputELBType) {\r\n        $ELBExists = $true\r\n      } else {\r\n
+              \       $global:LogSequenceToken = WriteErrorLog(\"ELB type for ELBDNSName
+              $ELBDNSName is incorrect. Allowed ELB Type is $InputELBType.\")\r\n
+              \     }\r\n    }\r\n    if (-not $ELBExists) {\r\n    $CLBName = (Get-ELBLoadBalancer
+              -Region $global:RegionId | Where-Object {$_.DNSName -eq $ELBDNSName}).LoadBalancerName\r\n
+              \     if (-not [string]::IsNullOrEmpty($CLBName)) {\r\n        $ELBExists
+              = $true\r\n      }\r\n    }\r\n    if (-not $ELBExists) {\r\n      $global:LogSequenceToken
+              = WriteErrorLog(\"ELB DNS Name $ELBDNSName does not found. Make sure
+              ELB with specified ELB DNS name does exists.\")\r\n    }\r\n  } catch
+              {\r\n    Write-Error $_.Exception.Message | format-list -force\r\n    $global:LogSequenceToken
+              = WriteErrorLog($ELBDNSName + \" : \" + $_.Exception.Message)\r\n  }\r\n}\r\n\r\n#check
+              for deployment bucket\r\n$DeploymentBucketRegion = ''\r\nif (-not [string]::IsNullOrEmpty($DeploymentBucketName))
+              {\r\n  try {\r\n    $DeploymentBucketRegion = (Get-S3BucketLocation
+              -BucketName $DeploymentBucketName -Region $global:RegionId).Value\r\n
+              \   if ([string]::IsNullOrEmpty($DeploymentBucketRegion)) {\r\n      $DeploymentBucketRegion
+              = 'us-east-1'\r\n    }\r\n  } catch {\r\n    Write-Error $_.Exception.Message
+              | format-list -force\r\n    $global:LogSequenceToken = WriteErrorLog($DeploymentBucketName
+              + \" : \" + $_.Exception.Message)\r\n  }\r\n}\r\n\r\nif (-not [string]::IsNullOrEmpty($DeploymentBucketRegion))
+              {\r\n  if (-not [string]::IsNullOrEmpty($PortalLicenseFile)) {\r\n    try
+              {\r\n      if(-not (Get-S3Object -BucketName $DeploymentBucketName -Region
+              $DeploymentBucketRegion | Where-Object {$_.Key -eq $PortalLicenseFile})){\r\n
+              \       $global:LogSequenceToken = WriteErrorLog(\"Portal license file
+              $PortalLicenseFile does not exists in deployment bucket $DeploymentBucketName.\")\r\n
+              \     }\r\n    } catch {\r\n      Write-Error $_.Exception.Message |
+              format-list -force\r\n      $global:LogSequenceToken = WriteErrorLog($PortalLicenseFile
+              + \" : \" + $_.Exception.Message)\r\n    }\r\n  }\r\n  if (-not [string]::IsNullOrEmpty($ServerLicenseFile))
+              {\r\n    try {\r\n      if(-not (Get-S3Object -BucketName $DeploymentBucketName
+              -Region $DeploymentBucketRegion | Where-Object {$_.Key -eq $ServerLicenseFile})){\r\n
+              \       $global:LogSequenceToken = WriteErrorLog(\"Server license file
+              $ServerLicenseFile does not exists in deployment bucket $DeploymentBucketName.\")\r\n
+              \     }\r\n    } catch {\r\n      Write-Error $_.Exception.Message |
+              format-list -force\r\n      $global:LogSequenceToken = WriteErrorLog($ServerLicenseFile
+              + \" : \" + $_.Exception.Message)\r\n    }\r\n  }\r\n  if (-not [string]::IsNullOrEmpty($SSLCertificateFile))
+              {\r\n    try {\r\n      if(-not (Get-S3Object -BucketName $DeploymentBucketName
+              -Region $DeploymentBucketRegion | Where-Object {$_.Key -eq $SSLCertificateFile})){\r\n
+              \       $global:LogSequenceToken = WriteErrorLog(\"SSL Certificate file
+              $SSLCertificateFile does not exists in deployment bucket $DeploymentBucketName.\")\r\n
+              \     }\r\n    } catch {\r\n      Write-Error $_.Exception.Message |
+              format-list -force\r\n      $global:LogSequenceToken = WriteErrorLog($SSLCertificateFile
+              + \" : \" + $_.Exception.Message)\r\n    }\r\n  }\r\n}\r\n\r\nif (-not
+              [string]::IsNullOrEmpty($SiteadminPasswordValue)) {\r\n  try {\r\n    if
+              ($SiteadminPasswordValue -match '^arn:(aws[a-zA-Z-]*)?:secretsmanager:[a-z]{2}((-gov)|(-iso(b?)))?-[a-z]+-\\d{1}:\\d{12}:secret:[a-zA-Z0-9-/_+=.@]*$')
+              {\r\n      $SiteadminPassword = (Get-SECSecretValue -SecretId $SiteadminPasswordValue
+              -Region $global:RegionId).SecretString\r\n      if (([string]::IsNullOrEmpty($SiteadminPassword)))
+              {\r\n        $global:LogSequenceToken = WriteErrorLog(\"Siteadmin user
+              password secret id does not found or not accessible.\")\r\n      } else
+              {\r\n        if (-not ($SiteadminPassword -match '^[a-zA-Z0-9_.@]{8,}$'))
+              {\r\n          $global:LogSequenceToken = WriteErrorLog(\"Siteadmin
+              user password mentioned in the specified secret does not match password
+              policies. Refer to ArcGIS Enterprise CloudFomration document for password
+              policies.\")\r\n        }\r\n      }\r\n    }\r\n  } catch {\r\n    Write-Error
+              $_.Exception.Message | format-list -force\r\n    $global:LogSequenceToken
+              = WriteErrorLog(\"SiteAdmin Password : \" + $_.Exception.Message)\r\n
+              \ }\r\n}\r\n\r\nif (([string]::IsNullOrEmpty($ArcGISUserPasswordValue))
+              -and ($PlatformType -eq 'Windows')) {\r\n  $global:LogSequenceToken
+              = WriteErrorLog(\"'arcgisUserPassword' parameter value cannot be empty
+              if platform type is 'Windows'.\")\r\n}\r\n\r\nif (-not [string]::IsNullOrEmpty($ArcGISUserPasswordValue))
+              {\r\n  try {\r\n    if ($ArcGISUserPasswordValue -match '^arn:(aws[a-zA-Z-]*)?:secretsmanager:[a-z]{2}((-gov)|(-iso(b?)))?-[a-z]+-\\d{1}:\\d{12}:secret:[a-zA-Z0-9-/_+=.@]*$')
+              {\r\n      $ArcGISUserPassword = (Get-SECSecretValue -SecretId $ArcGISUserPasswordValue
+              -Region $global:RegionId).SecretString\r\n      if (([string]::IsNullOrEmpty($ArcGISUserPassword)))
+              {\r\n        $global:LogSequenceToken = WriteErrorLog(\"'arcgis' user
+              password secret id does not found or not accessible.\")\r\n      } else
+              {\r\n        if (-not ($ArcGISUserPassword -match \"(?!.*arcgis)(?!.*Arc)(?!.*GIS)(?!.*user)(?!.*account)^((?=.*[a-z])(?=.*[A-Z])(?=.*\\d)|(?=.*[a-z])(?=.*[A-Z])(?=.*[^A-Za-z0-9])|(?=.*[a-z])(?=.*\\d)(?=.*[^A-Za-z0-9])|(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]))([A-Za-z\\d@#$%&�*\\-_+=\\[\\]{}|:\\',?~();!]|\\.(?!@)){8,}$\"))
+              {\r\n          $global:LogSequenceToken = WriteErrorLog(\"'arcgis' user
+              password mentioned in the specified secret does not match password policies.
+              Refer to ArcGIS Enterprise CloudFomration document for password policies.\")\r\n
+              \       }\r\n      }\r\n    }\r\n  } catch {\r\n    Write-Error $_.Exception.Message
+              | format-list -force\r\n    $global:LogSequenceToken = WriteErrorLog(\"'arcgis'
+              user Password : \" + $_.Exception.Message)\r\n  }\r\n}\r\n\r\nif (-not
+              [string]::IsNullOrEmpty($SSLCertificatePasswordValue)) {\r\n  try {\r\n
+              \   if ($SSLCertificatePasswordValue -match '^arn:(aws[a-zA-Z-]*)?:secretsmanager:[a-z]{2}((-gov)|(-iso(b?)))?-[a-z]+-\\d{1}:\\d{12}:secret:[a-zA-Z0-9-/_+=.@]*$')
+              {\r\n      $SSLCertificatePassword = (Get-SECSecretValue -SecretId $SSLCertificatePasswordValue
+              -Region $global:RegionId).SecretString\r\n      if (([string]::IsNullOrEmpty($SSLCertificatePassword)))
+              {\r\n        $global:LogSequenceToken = WriteErrorLog(\"SSL Certificate
+              password secret id does not found or not accessible.\")\r\n      } else
+              {\r\n        if (-not ($SSLCertificatePassword -match '[^\\\"]{1,128}'))
+              {\r\n          $global:LogSequenceToken = WriteErrorLog(\"SSL Certificate
+              password mentioned in the specified secret does not match password policies.
+              Refer to ArcGIS Enterprise CloudFomration document for password policies.\")\r\n
+              \       }\r\n      }\r\n    }\r\n  } catch {\r\n    Write-Error $_.Exception.Message
+              | format-list -force\r\n    $global:LogSequenceToken = WriteErrorLog(\"SSL
+              Certificate Password : \" + $_.Exception.Message)\r\n  }\r\n}\r\n\r\nif
+              ($global:ErrorFound) {\r\n  $Status = \"FAILURE\"\r\n  $UniqueId = \"FAILURE\"\r\n}
+              else {\r\n  $Status = \"SUCCESS\"\r\n  $UniqueId = \"SUCCESS\"\r\n}\r\n\r\nif
+              (-not ([string]::IsNullOrEmpty($WaitCondition)))\r\n{\r\n  $stackstatus=((Get-CFNStack
+              -StackName $StackName -Region $global:RegionId).StackStatus).Value\r\n
+              \ if ($stackstatus -eq \"CREATE_IN_PROGRESS\") \r\n  {\r\n    try {\r\n
+              \     Send-CFNResourceSignal -StackName $StackName -LogicalResourceId
+              $WaitCondition -Status $Status -UniqueId $UniqueId -Region $global:RegionId\r\n
+              \   }\r\n    catch\r\n    {\r\n      Write-Error $_.Exception | format-list
+              -force\r\n      $global:LogSequenceToken = WriteErrorLog(\"Failed to
+              send signal back to CloudFormation stack. Refer to deployment logs $LogGroupName
+              for error details.\" + $_.Exception)\r\n      Write-Error \"Failed to
+              send signal back to CloudFormation stack.\" -ErrorAction Stop\r\n    }\r\n
+              \ }\r\n  if ($Status -eq \"FAILURE\") {\r\n    $global:LogSequenceToken
+              = WriteErrorLog(\"Failed to validate input parameter for $StackName
+              CloudFormation stack.\")\r\n    Write-Error \"Failed to validate input
+              parameter for $StackName CloudFormation stack. Refer to deployment logs
+              $LogGroupName for error details.\" -ErrorAction Stop\r\n  }\r\n}\r\n\r\n"
+            InputPayload:
+              StackName: "{{StackName}}"
+              RegionId: "{{global:REGION}}"
+              VPCId: "{{VPCId}}"
+              Subnet1Id: "{{Subnet1Id}}"
+              Subnet2Id: "{{Subnet2Id}}"
+              PlatformType: "{{PlatformType}}"
+              AMIId: "{{AMIId}}"
+              EIPAllocationId: "{{EIPAllocationId}}"
+              ELBDNSName: "{{ELBDNSName}}"
+              InputELBType: "{{InputELBType}}"
+              DeploymentBucketName: "{{DeploymentBucketName}}"
+              PortalLicenseFile: "{{PortalLicenseFile}}"
+              ServerLicenseFile: "{{ServerLicenseFile}}"
+              SSLCertificateFile: "{{SSLCertificateFile}}"
+              SiteadminPasswordValue: "{{SiteadminPasswordValue}}"
+              ArcGISUserPasswordValue: "{{ArcGISUserPasswordValue}}"
+              SSLCertificatePasswordValue: "{{SSLCertificatePasswordValue}}"
+              WaitCondition: "{{WaitCondition}}"
+              ActionName: ValidateInputParameters
+              LogGroupName: "{{DeploymentLogs}}"
+      DocumentType: Automation
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: ValidateInputAutomation
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+  ValidateInputWaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn:
+    - ArcGISEnterpriseIAMPolicy
+    - ArcGISEnterpriseIAMRole
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT1H
+  ValidateInputAssociation:
+    Type: AWS::SSM::Association
+    Properties:
+      Name:
+        Ref: ValidateInputAutomation
+      Parameters:
+        AutomationAssumeRole:
+        - Fn::GetAtt:
+          - ArcGISEnterpriseIAMRole
+          - Arn
+        PlatformType:
+        - Ref: PlatformType
+        VPCId:
+        - Ref: VPCId
+        Subnet1Id:
+        - Ref: Subnet1
+        Subnet2Id:
+        - Ref: Subnet2
+        AMIId:
+        - Ref: AMIId
+        EIPAllocationId:
+        - ''
+        ELBDNSName:
+        - Ref: ELBDNSName
+        InputELBType:
+        - application
+        DeploymentBucketName:
+        - Ref: DeploymentBucket
+        PortalLicenseFile:
+        - Ref: PortalLicenseFileKeyName
+        ServerLicenseFile:
+        - ''
+        SSLCertificateFile:
+        - Ref: SSLCertificateFileKeyName
+        SiteadminPasswordValue:
+        - Ref: SiteadminUserPassword
+        ArcGISUserPasswordValue:
+        - Ref: arcgisUserPassword
+        SSLCertificatePasswordValue:
+        - Ref: SSLCertificatePassword
+        DeploymentLogs:
+        - Ref: DeploymentLogs
+        StackName:
+        - Ref: AWS::StackName
+        WaitCondition:
+        - ValidateInputWaitCondition
+    DependsOn:
+    - ArcGISEnterpriseIAMPolicy
+    - ArcGISEnterpriseIAMRole
+  StopStackFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: "import os\nimport boto3\nimport logging\nimport time\n\nlogger =
+          logging.getLogger()\n\n# Stops EC2 instances of WebGIS HA CloudFormation
+          stack.\ndef stop_portal_ha_stack(event, context):\n    stack_name = os.environ['StackName']\n\n
+          \   cf = boto3.client('cloudformation')\n    ec2 = boto3.client('ec2')\n
+          \   \n    # Stop individual EC2 instances \n\n    try:\n        fileserver_instance
+          = cf.describe_stack_resource(\n            StackName = stack_name,\n            LogicalResourceId
+          = 'FileServerEC2Instance')\n\n        fileserver_instance_id = fileserver_instance['StackResourceDetail']['PhysicalResourceId']\n\n
+          \       ec2.stop_instances(InstanceIds = [fileserver_instance_id])    \n
+          \       time.sleep(120)\n    except Exception as e:\n        logger.error('File
+          server EC2 instance does not exists. {}.'.format(e))\n\n    primary_instance
+          = cf.describe_stack_resource(\n        StackName = stack_name,\n        LogicalResourceId
+          = 'PortalForArcGISPrimaryEC2Instance')\n\n    primary_instance_id = primary_instance['StackResourceDetail']['PhysicalResourceId']\n\n
+          \   secondary_instance = cf.describe_stack_resource(\n        StackName
+          = stack_name,\n        LogicalResourceId = 'PortalForArcGISStandbyEC2Instance')\n\n
+          \   secondary_instance_id = secondary_instance['StackResourceDetail']['PhysicalResourceId']\n\n
+          \   ec2.stop_instances(\n        InstanceIds = [\n            secondary_instance_id\n
+          \       ]\n    )\n\n    # 2 minutes delay between stopping secondary and
+          primary instances\n    time.sleep(120)\n\n    ec2.stop_instances(\n        InstanceIds
+          = [\n            primary_instance_id\n        ]\n    )\n\n    # 30 seconds
+          delay between stopping primary and file servers instances\n    time.sleep(30)\n\n
+          \   ec2.stop_instances(\n        InstanceIds = [\n            fileserver_instance_id\n
+          \       ]\n    )\n\n    logger.info('CloudFormation stack {} stack stopped'.format(stack_name))\n"
+      Role:
+        Fn::GetAtt:
+        - ArcGISEnterpriseIAMRole
+        - Arn
+      Description: Stops EC2 instance created by this CloudFormation stack
+      Environment:
+        Variables:
+          StackName:
+            Ref: AWS::StackName
+      Handler: index.stop_portal_ha_stack
+      Runtime: python3.10
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: StopStackFunction
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      Timeout: 300
+  StartStackFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: "import os\nimport boto3\nimport logging\nimport time\n\nlogger =
+          logging.getLogger()\n\n# Starts EC2 instances of WebGIS HA CloudFormation
+          stack.\ndef start_portal_ha_stack(event, context):\n    stack_name = os.environ['StackName']\n\n
+          \   cf = boto3.client('cloudformation')\n    ec2 = boto3.client('ec2')\n\n
+          \   # Start individual EC2 instances \n    try:\n        fileserver_instance
+          = cf.describe_stack_resource(\n            StackName = stack_name,\n            LogicalResourceId
+          = 'FileServerEC2Instance')\n\n        fileserver_instance_id = fileserver_instance['StackResourceDetail']['PhysicalResourceId']\n\n
+          \       ec2.start_instances(InstanceIds = [fileserver_instance_id])\n        time.sleep(60)\n
+          \   except Exception as e:\n        logger.error('File server EC2 instance
+          does not exists. {}.'.format(e))\n\n    primary_instance = cf.describe_stack_resource(\n
+          \       StackName = stack_name,\n        LogicalResourceId = 'PortalForArcGISPrimaryEC2Instance')\n\n
+          \   primary_instance_id = primary_instance['StackResourceDetail']['PhysicalResourceId']\n\n
+          \   secondary_instance = cf.describe_stack_resource(\n        StackName
+          = stack_name,\n        LogicalResourceId = 'PortalForArcGISStandbyEC2Instance')\n\n
+          \   secondary_instance_id = secondary_instance['StackResourceDetail']['PhysicalResourceId']\n\n
+          \   ec2.start_instances(InstanceIds = [primary_instance_id])\n\n    time.sleep(60)\n\n
+          \   ec2.start_instances(InstanceIds = [secondary_instance_id])\n\n    logger.info('CloudFormation
+          stack {} stack started'.format(stack_name))\n"
+      Role:
+        Fn::GetAtt:
+        - ArcGISEnterpriseIAMRole
+        - Arn
+      Description: Starts EC2 instance created by this CloudFormation stack
+      Environment:
+        Variables:
+          StackName:
+            Ref: AWS::StackName
+      Handler: index.start_portal_ha_stack
+      Runtime: python3.10
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: StartStackFunction
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      Timeout: 300
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription:
+        Ref: AWS::StackName
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: 80
+        IpProtocol: tcp
+        ToPort: 80
+      - CidrIp: 0.0.0.0/0
+        FromPort: 443
+        IpProtocol: tcp
+        ToPort: 443
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: SecurityGroup
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-SG"
+      VpcId:
+        Ref: VPCId
+  SecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      GroupId:
+        Ref: SecurityGroup
+      SourceSecurityGroupId:
+        Ref: SecurityGroup
+      ToPort: 65535
+  IAMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+      - Ref: ArcGISEnterpriseIAMRole
+      Path: "/"
+  EC2InstanceLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            DeleteOnTermination: true
+            VolumeSize:
+              Ref: InstanceDriveSize
+            VolumeType: gp2
+        IamInstanceProfile:
+          Arn:
+            Fn::GetAtt:
+            - IAMInstanceProfile
+            - Arn
+        ImageId:
+          Fn::If:
+          - AMICondition
+          - Fn::If:
+            - WindowsAMI
+            - "{{resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base:1}}"
+            - "{{resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id:1}}"
+          - Ref: AMIId
+        InstanceType:
+          Ref: InstanceType
+        KeyName:
+          Ref: KeypairName
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+        NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          DeviceIndex: 0
+          Groups:
+          - Ref: SecurityGroup
+          SubnetId:
+            Ref: Subnet1
+    DependsOn:
+    - ValidateInputWaitCondition
+  FileServerEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sda1"
+        Ebs:
+          DeleteOnTermination: true
+          VolumeSize:
+            Ref: FileserverInstanceDriveSize
+          VolumeType: gp2
+      InstanceType:
+        Ref: FileserverInstanceType
+      LaunchTemplate:
+        LaunchTemplateId:
+          Ref: EC2InstanceLaunchTemplate
+        Version:
+          Fn::GetAtt:
+          - EC2InstanceLaunchTemplate
+          - LatestVersionNumber
+      Monitoring: true
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: FileServerEC2Instance
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-fileserver"
+    Condition: UseFileSystem
+  PortalForArcGISPrimaryEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId:
+          Ref: EC2InstanceLaunchTemplate
+        Version:
+          Fn::GetAtt:
+          - EC2InstanceLaunchTemplate
+          - LatestVersionNumber
+      Monitoring: true
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: PortalForArcGISPrimaryEC2Instance
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-Portal-Primary"
+  PrimaryServerRecoveryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 5
+      AlarmActions:
+      - Fn::Join:
+        - ''
+        - - 'arn:'
+          - Ref: AWS::Partition
+          - ":automate:"
+          - Ref: AWS::Region
+          - ":ec2:recover"
+      AlarmDescription: Trigger a recovery when instance status check fails for 5
+        consecutive minutes.
+      Dimensions:
+      - Name: InstanceId
+        Value:
+          Ref: PortalForArcGISPrimaryEC2Instance
+      MetricName: StatusCheckFailed_System
+      Namespace: AWS/EC2
+      Period: 60
+      Statistic: Minimum
+      Threshold: 0
+  PortalForArcGISStandbyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId:
+          Ref: EC2InstanceLaunchTemplate
+        Version:
+          Fn::GetAtt:
+          - EC2InstanceLaunchTemplate
+          - LatestVersionNumber
+      Monitoring: true
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: true
+        DeleteOnTermination: true
+        DeviceIndex: '0'
+        GroupSet:
+        - Ref: SecurityGroup
+        SubnetId:
+          Ref: Subnet2
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: PortalForArcGISStandbyEC2Instance
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-Portal-Standby"
+  StandbyServerRecoveryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 5
+      AlarmActions:
+      - Fn::Join:
+        - ''
+        - - 'arn:'
+          - Ref: AWS::Partition
+          - ":automate:"
+          - Ref: AWS::Region
+          - ":ec2:recover"
+      AlarmDescription: Trigger a recovery when instance status check fails for 5
+        consecutive minutes.
+      Dimensions:
+      - Name: InstanceId
+        Value:
+          Ref: PortalForArcGISStandbyEC2Instance
+      MetricName: StatusCheckFailed_System
+      Namespace: AWS/EC2
+      Period: 60
+      Statistic: Minimum
+      Threshold: 0
+  PortalContentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: Resource
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Condition: UseCloudStore
+  PortalTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath:
+        Fn::If:
+        - WebadaptorCondition
+        - "/arcgis/portaladmin/healthCheck"
+        - Fn::Join:
+          - ''
+          - - "/"
+            - Ref: PortalWebadaptorName
+            - "/portaladmin/healthCheck"
+      HealthCheckPort:
+        Fn::If:
+        - WebadaptorCondition
+        - '7443'
+        - '443'
+      HealthCheckProtocol: HTTPS
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: '200'
+      Port:
+        Fn::If:
+        - WebadaptorCondition
+        - '7443'
+        - '443'
+      Protocol: HTTPS
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: PortalTargetGroup
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      TargetGroupAttributes:
+      - Key: stickiness.enabled
+        Value: 'false'
+      - Key: deregistration_delay.timeout_seconds
+        Value: '300'
+      - Key: slow_start.duration_seconds
+        Value: '0'
+      - Key: load_balancing.algorithm.type
+        Value: round_robin
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId:
+        Ref: VPCId
+  ArcGISPortalHACommandDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      Content:
+        schemaVersion: '2.2'
+        description: Execute composite or nested Systems Manager documents (SSM documents)
+          stored in a remote location.
+        parameters:
+          documentUrl:
+            description: "(Required) Specify the SSM document URL that will be downloaded."
+            type: String
+          documentParameters:
+            description: "(Optional) Parameters to be passed to the SSM document that
+              will be executed."
+            type: StringMap
+            displayType: textarea
+            default: {}
+        mainSteps:
+        - action: aws:runPowerShellScript
+          name: runPowerShellScript
+          precondition:
+            StringEquals:
+            - platformType
+            - Windows
+          inputs:
+            timeoutSeconds: '1800'
+            runCommand:
+            - "$tempfolderpath = (Join-Path 'C:\\Windows\\Temp\\esri' 'ssm')"
+            - if (-not (Test-Path -Path $tempfolderpath))
+            - "{"
+            - "   New-Item -ItemType Directory -Path $tempfolderpath"
+            - "}"
+            - "$ssmdocumentpath = (Join-Path $tempfolderpath 'ssmdocument.json')"
+            - if (Test-Path -Path $ssmdocumentpath -PathType Leaf) {
+            - "   Remove-Item $ssmdocumentpath"
+            - "}"
+            - Invoke-WebRequest -Uri {{ documentUrl }} -OutFile $ssmdocumentpath
+        - action: aws:runDocument
+          name: runDocumentOnWindows
+          precondition:
+            StringEquals:
+            - platformType
+            - Windows
+          inputs:
+            documentType: LocalPath
+            documentPath: C:\Windows\temp\esri\ssm\ssmdocument.json
+            documentParameters: "{{ documentParameters }}"
+        - action: aws:runShellScript
+          name: runShellScript
+          precondition:
+            StringEquals:
+            - platformType
+            - Linux
+          inputs:
+            timeoutSeconds: '1800'
+            runCommand:
+            - curl -s -f "{{ documentUrl }}" > /tmp/ssmdocument.json
+        - action: aws:runDocument
+          name: runDocumentOnLinux
+          precondition:
+            StringEquals:
+            - platformType
+            - Linux
+          inputs:
+            documentType: LocalPath
+            documentPath: "/tmp/ssmdocument.json"
+            documentParameters: "{{ documentParameters }}"
+      DocumentType: Command
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: Automation
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+  ArcGISPortalHAAutomation:
+    Type: AWS::SSM::Document
+    Properties:
+      Content:
+        schemaVersion: '0.3'
+        description: Installs and configures Portal for ArcGIS highly available deployment.
+        assumeRole: "{{ AutomationAssumeRole }}"
+        parameters:
+          AutomationAssumeRole:
+            type: String
+            description: "(Required) The ARN of the role that allows Automation to
+              perform the actions on your behalf."
+          PlatformType:
+            type: String
+            description: "(Required) Platform type."
+            allowedValues:
+            - Windows
+            - Linux
+          AWSCliBundleUrl:
+            type: String
+            description: "(Conditional) AWS CLI Bundle URL. Required if platform type
+              is Linux."
+          CincClientUrlWin:
+            type: String
+            description: "(Required) URL of CINC client setup for Windows."
+          CincClientUrlLin:
+            type: String
+            description: "(Required) URL of CINC client setup for Linux."
+          CookbooksUrl:
+            type: String
+            description: "(Required) ArcGIS Chef cookbooks URL."
+          ArcGISVersion:
+            type: String
+            description: "(Required) ArcGIS Server version."
+          ArcGISDeploymentTemplate:
+            type: String
+            description: "(Required) ArcGIS deployment template."
+          DeploymentBucket:
+            type: String
+            description: "(Required) AWS S3 bucket name containing authorization files
+              and SSL certificates."
+          PortalLicenseFile:
+            type: String
+            description: "(Required) AWS S3 key of Portal for ArcGIS license authorisation
+              file."
+          UserLicenseTypeId:
+            type: String
+            description: "(Required) ArcGIS Portal Level 2 id."
+          SiteAdmin:
+            type: String
+            description: "(Required) Portal for ArcGIS primary site administrator
+              username."
+          SiteAdminPassword:
+            type: String
+            description: "(Required) Portal for ArcGIS primary site administrator
+              password."
+          RunAsUserUserName:
+            type: String
+            description: "(Optional) Portal for ArcGIS user name."
+            default: arcgis
+          RunAsUserPassword:
+            type: String
+            description: "(Conditional) 'RunAsUserUserName' windows user account password.
+              This is required only if operating system is Windows."
+            default: ''
+          ConfigStoreType:
+            type: String
+            description: "(Optional) Portal for ArcGIS content store type."
+            default: FileSystem
+            allowedValues:
+            - FileSystem
+            - CloudStore
+          PortalContentStoreBucket:
+            type: String
+            description: "(Conditional) Portal content store AWS S3 bucket name. Required
+              only if configStoreType is CloudStore."
+            default: ''
+          SiteDomain:
+            type: String
+            description: "(Required) Domain name of Portal for ArcGIS deployment."
+          WebadaptorName:
+            type: String
+            description: "(Optional) Webadaptor name for Portal for ArcGIS."
+            default: ''
+          SSLCertificateFile:
+            type: String
+            description: "(Optional) AWS S3 key of SSL certificate file in PKSC12
+              format."
+            default: ''
+          SSLCertificatePassword:
+            type: String
+            description: "(Optional) SSL certificate file password."
+            default: ''
+          ExecuteRemoteSSMDocumentName:
+            type: String
+            description: "(Required) Execute composite or nested Systems Manager documents
+              (SSM documents) stored in a remote location."
+          ArcGISWinBootstrapSSMDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to bootstrap Windows
+              instance."
+          ArcGISFileServerWinDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to configure ArcGIS
+              File server on Windows instance."
+          ArcGISPortalInstallWinSSMDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to execute on EC2
+              instances for installing Portal for ArcGIS on Windows."
+          ArcGISPortalWinSSMDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to execute on EC2
+              instances for installing and configuring Portal for ArcGIS on Windows."
+          ArcGISLinBootstrapSSMDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to bootstrap Linux
+              instance."
+          ArcGISFileServerLinDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to configure ArcGIS
+              File server on Linux instance."
+          ArcGISPortalInstallLinSSMDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to execute on EC2
+              instances for installing Portal for ArcGIS on Linux."
+          ArcGISPortalLinSSMDocumentPath:
+            type: String
+            description: "(Required) AWS S3 path of SSM Document to execute on EC2
+              instances for installing and configuring Portal for ArcGIS on Linux."
+          FileServerIP:
+            type: String
+            description: "(Conditional) ArcGIS file server IP Address. This is required
+              only if ConfigStoreType type is FileSystem."
+            default: ''
+          PrimaryServerIP:
+            type: String
+            description: "(Required) Portal for ArcGIS primary server IP Address."
+          ELBDNSName:
+            type: String
+            description: "(Optional) Elastic load balancer DNS name."
+            default: ''
+          ELBContextName:
+            type: String
+            description: "(Optional) Elastic load balancer context name."
+            default: ''
+          SecurityGroupId:
+            type: String
+            description: "(Required) Security group id of Portal for ArcGIS deployment."
+          PortalTargetGroupArn:
+            type: String
+            description: "(Optional) ARN of ArcGIS Portal target group."
+            default: ''
+          FileServerInstanceId:
+            type: String
+            description: "(Conditional) AWS EC2 instance id of ArcGIS File server.
+              This is required only if ConfigStoreType type is FileSystem."
+            default: ''
+          PrimaryPortalInstanceId:
+            type: String
+            description: "(Required) AWS EC2 instance id."
+          StandbyPortalInstanceId:
+            type: String
+            description: "(Required) AWS EC2 instance id."
+          DeploymentLogs:
+            type: String
+            description: "(Required) AWS CloudWatch log group name."
+          StackName:
+            type: String
+            description: "(Required) AWS CloudFormation stack name."
+          WaitCondition:
+            type: String
+            description: "(Required) Wait condition for CloudFormation stack."
+        mainSteps:
+        - name: ConditionForELB
+          action: aws:branch
+          inputs:
+            Choices:
+            - NextStep: CheckInstanceState
+              Variable: "{{ELBDNSName}}"
+              EqualsIgnoreCase: ''
+            Default: ConfigureArcGISPortalELB
+        - name: ConfigureArcGISPortalELB
+          action: aws:executeScript
+          onFailure: step:SignalFailure
+          nextStep: CheckInstanceState
+          inputs:
+            Runtime: PowerShell Core 6.0
+            Script: "$inputPayload = $env:InputPayload | ConvertFrom-Json;\r\n\r\n$ELBDNSName
+              = $inputPayload.ELBDNSName;\r\n$SecurityGroup = $inputPayload.SecurityGroupId;\r\n$PrimaryInstanceId
+              = $inputPayload.PrimaryInstanceId;\r\n$StandbyInstanceId = $inputPayload.StandbyInstanceId;\r\n$PortalWebAdaptorName
+              = $inputPayload.PortalWebAdaptorName;\r\n$PortalTargetGroupArn = $inputPayload.PortalTargetGroupArn;\r\n\r\n$ActionName
+              = $inputPayload.ActionName;\r\n$LogGroupName = $inputPayload.LogGroupName;\r\n$global:RegionId
+              = $inputPayload.RegionId;\r\n\r\n$guid = New-Guid;\r\n$LogStreamName
+              = \"$guid/$ActionName/stderr\"\r\n$global:LogSequenceToken = \"\"\r\n\r\nInstall-Module
+              AWS.Tools.CloudWatchLogs -Force\r\nInstall-Module AWS.Tools.EC2 -Force\r\nInstall-Module
+              AWS.Tools.ElasticLoadBalancing -Force\r\nInstall-Module AWS.Tools.ElasticLoadBalancingV2
+              -Force\r\n\r\nImport-Module AWS.Tools.CloudWatchLogs\r\nImport-Module
+              AWS.Tools.EC2\r\nImport-Module AWS.Tools.ElasticLoadBalancing\r\nImport-Module
+              AWS.Tools.ElasticLoadBalancingV2\r\n\r\nfunction WriteErrorLog($errormessage)
+              {\r\n  Write-Error $errormessage | format-list -force\r\n  if ([string]::IsNullOrEmpty($global:LogSequenceToken))
+              {\r\n    $splat = @{\r\n      LogGroupName = $LogGroupName\r\n      LogStreamName
+              =  $LogStreamName\r\n    }\r\n    New-CWLLogStream @splat -Region $global:RegionId\r\n\r\n
+              \   $logEntry = New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n    }\r\n
+              \   $global:LogSequenceToken = Write-CWLLogEvent @splat -Region $global:RegionId\r\n
+              \ } else {\r\n    $logEntry =  New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n      SequenceToken
+              = $global:LogSequenceToken\r\n    }\r\n    $global:LogSequenceToken
+              = Write-CWLLogEvent @splat -Region $global:RegionId\r\n  }\r\n  return
+              $global:LogSequenceToken\r\n}\r\n      \r\ntry\r\n{  \r\n  if ($PortalWebAdaptorName
+              -eq 'arcgis' ) {    \r\n    $httpinstanceport = 7080    \r\n    $httpsinstanceport
+              = 7443  \r\n  } else {    \r\n    $httpinstanceport = 80    \r\n    $httpsinstanceport
+              = 443  \r\n  }  \r\n\r\n  $ELBSecurityGroups = $null  \r\n  $ALBName
+              = (Get-ELB2LoadBalancer -Region $global:RegionId | Where-Object {$_.DNSName
+              -eq $ELBDNSName}).LoadBalancerName  \r\n  $ELBType =  (Get-ELB2LoadBalancer
+              -Region $global:RegionId | Where-Object {$_.DNSName -eq $ELBDNSName}).Type.Value
+              \ \r\n  if (-not [string]::IsNullOrEmpty($ELBType)) {    \r\n    if
+              ($ELBType -eq 'application') {      \r\n      # Write-Output 'Retrieve
+              HTTPS listener'      \r\n      $LoadBalancerArn = (Get-ELB2LoadBalancer
+              -Region $global:RegionId | Where-Object {$_.DNSName -eq $ELBDNSName}).LoadBalancerArn
+              \     \r\n      $ListnerARN = (Get-ELB2Listener -LoadBalancerArn $LoadBalancerArn
+              -Region $global:RegionId | Where-Object {$_.Protocol -eq 'HTTPS' -and
+              $_.Port -eq '443'}).ListenerArn      \r\n      \r\n      if (([string]::IsNullOrEmpty($ListnerARN)))
+              {        \r\n        $global:LogSequenceToken = WriteErrorLog(\"There
+              is no configured listener for load balancer \" + $ALBName + \" on port
+              [443].\")        \r\n        throw \"There is no configured listener
+              for load balancer \" + $ALBName + \" on port [443].\" \r\n      }      \r\n
+              \     \r\n      $RuleArn = (Get-ELB2Rule -ListenerArn $ListnerARN |
+              Where-Object {$_.Conditions.Field -eq 'path-pattern' -and $_.Conditions.Values
+              -contains '/' + $PortalWebAdaptorName + '/*'}).RuleArn      \r\n      if
+              (-not [string]::IsNullOrEmpty($RuleArn)) {        \r\n        $global:LogSequenceToken
+              = WriteErrorLog(\"In '\" + $ALBName + \"' application load balancer,
+              rule already exists for web context name '\" + $PortalWebAdaptorName
+              + \"'. Delete this rule and try again.\")        \r\n        throw \"In
+              '\" + $ALBName + \"' application load balancer, rule already exists
+              for web context name '\" + $PortalWebAdaptorName + \"'. Delete this
+              rule and try again.\"      \r\n      }      \r\n      \r\n      $RuleArn
+              = (Get-ELB2Rule -ListenerArn $ListnerARN | Where-Object {$_.Conditions.Field
+              -eq 'path-pattern' -and $_.Conditions.Values -contains '/' + $PortalWebAdaptorName}).RuleArn
+              \r\n      if (-not [string]::IsNullOrEmpty($RuleArn)) {        \r\n
+              \       $global:LogSequenceToken = WriteErrorLog(\"In '\" + $ALBName
+              + \"' application load balancer, rule already exists for web context
+              name '\" + $PortalWebAdaptorName + \"'. Delete this rule and try again.\")
+              \       \r\n        throw \"In '\" + $ALBName + \"' application load
+              balancer, rule already exists for  web context name '\" + $PortalWebAdaptorName
+              + \"'. Delete this rule and try again.\"      \r\n      }      \r\n
+              \     # Write-Output 'Retrieve highest priority'      \r\n      $Priority
+              = (((Get-ELB2Rule -ListenerArn $ListnerARN -Region $global:RegionId
+              | Where-Object {-not $_.IsDefault}).Priority) | Measure-Object -Maximum).Maximum
+              \     \r\n      \r\n      # Write-Output 'Create new rule with highest
+              priority'      \r\n      $Priority = $Priority + 1      \r\n      $patternlist
+              = New-Object Collections.Generic.List[String]      \r\n      $patternlist.Add(\"/\"
+              + $PortalWebAdaptorName + \"/*\")      \r\n      $PathPatternConditionConfig
+              = New-Object Amazon.ElasticLoadBalancingV2.Model.PathPatternConditionConfig
+              \     \r\n      $PathPatternConditionConfig.Values = $patternlist      \r\n
+              \     $newcondition = New-Object Amazon.ElasticLoadBalancingV2.Model.RuleCondition
+              \     \r\n      $newcondition.Field = 'path-pattern'      \r\n      $newcondition.PathPatternConfig
+              = $PathPatternConditionConfig      \r\n      $newaction = New-Object
+              Amazon.ElasticLoadBalancingV2.Model.Action      \r\n      $newaction.Type
+              = 'forward'      \r\n      $newaction.TargetGroupArn = $PortalTargetGroupArn
+              \     \r\n      New-ELB2Rule -ListenerArn $ListnerARN -Action $newaction
+              -Condition $newcondition -Priority $Priority -Region $global:RegionId
+              \     \r\n      \r\n      # Write-Output 'Create new rule with highest
+              priority'      \r\n      $Priority = $Priority + 1      \r\n      $patternlist
+              = New-Object Collections.Generic.List[String]      \r\n      $patternlist.Add(\"/\"
+              + $PortalWebAdaptorName)      \r\n      $PathPatternConditionConfig
+              = New-Object Amazon.ElasticLoadBalancingV2.Model.PathPatternConditionConfig
+              \     \r\n      $PathPatternConditionConfig.Values = $patternlist      \r\n
+              \     $newcondition = New-Object Amazon.ElasticLoadBalancingV2.Model.RuleCondition
+              \     \r\n      $newcondition.Field = 'path-pattern'      \r\n      $newcondition.PathPatternConfig
+              = $PathPatternConditionConfig      \r\n      $newaction = New-Object
+              Amazon.ElasticLoadBalancingV2.Model.Action      \r\n      $newaction.Type
+              = 'forward'      \r\n      $newaction.TargetGroupArn = $PortalTargetGroupArn
+              \     \r\n      New-ELB2Rule -ListenerArn $ListnerARN -Action $newaction
+              -Condition $newcondition -Priority $Priority -Region $global:RegionId
+              \     \r\n      \r\n      # Write-Output 'Register instance with load
+              balancer'       \r\n      $targetdescription = New-Object Amazon.ElasticLoadBalancingV2.Model.TargetDescription
+              \     \r\n      $targetdescription.Id = $PrimaryInstanceId      \r\n
+              \     $targetdescription.Port = $httpsinstanceport      \r\n      Register-ELB2Target
+              -TargetGroupArn $PortalTargetGroupArn -Target $targetdescription -Region
+              $global:RegionId      \r\n      \r\n      # Write-Output 'Register instance
+              with load balancer'       \r\n      $targetdescription = New-Object
+              Amazon.ElasticLoadBalancingV2.Model.TargetDescription      \r\n      $targetdescription.Id
+              = $StandbyInstanceId      \r\n      $targetdescription.Port = $httpsinstanceport
+              \     \r\n      Register-ELB2Target -TargetGroupArn $PortalTargetGroupArn
+              -Target $targetdescription -Region $global:RegionId      \r\n      \r\n
+              \     # Write-Output 'Retrieve ELB Security Groups'       \r\n      $ELBSecurityGroups
+              = (Get-ELB2LoadBalancer -Region $global:RegionId | Where-Object {$_.DNSName
+              -eq $ELBDNSName}).SecurityGroups    \r\n    }  else {      \r\n      $ALBName=''
+              \   \r\n    }  \r\n  }  \r\n  \r\n  $CLBName = (Get-ELBLoadBalancer
+              -Region $global:RegionId | Where-Object {$_.DNSName -eq $ELBDNSName}).LoadBalancerName
+              \ \r\n  if (-not [string]::IsNullOrEmpty($CLBName)) {    \r\n    $SSLCertificateId
+              = $null    \r\n    $PolicyNames = $null    \r\n    $httpsListener =
+              $null    \r\n    $ELBListeners = (Get-ELBLoadBalancer -Region $global:RegionId
+              | Where-Object {$_.DNSName -eq $ELBDNSName}).ListenerDescriptions\r\n
+              \   \r\n    foreach ( $ELBListener in $ELBListeners ) {      \r\n      if
+              ( ($ELBListener.Listener.LoadBalancerPort -eq 443) -and ($ELBListener.Listener.Protocol
+              -eq 'HTTPS') ) {        \r\n        $SSLCertificateId = $ELBListener.Listener.SSLCertificateId
+              \       \r\n        $PolicyNames = $ELBListener.PolicyNames        \r\n
+              \       $httpsListener = $ELBListener      \r\n      }    \r\n    }
+              \   \r\n    \r\n    if ($null -eq $httpsListener) {      \r\n      $global:LogSequenceToken
+              = WriteErrorLog(\"There is no configured listener for load balancer
+              \" + $CLBName + \" on port [443].\")      \r\n      throw \"There is
+              no configured listener for load balancer \" + $CLBName + \" on port
+              [443].\" \r\n    }    \r\n    \r\n    Remove-ELBLoadBalancerListener
+              -LoadBalancerName $CLBName -LoadBalancerPort 80 -Region $global:RegionId
+              -Force     \r\n    Remove-ELBLoadBalancerListener -LoadBalancerName
+              $CLBName -LoadBalancerPort 443 -Region $global:RegionId -Force    \r\n
+              \   \r\n    $httpsListener = $null    \r\n    $httpsListener = New-Object
+              Amazon.ElasticLoadBalancing.Model.Listener    \r\n    $httpsListener.Protocol
+              = \"https\"    \r\n    $httpsListener.LoadBalancerPort = 443    \r\n
+              \   $httpsListener.InstanceProtocol = \"https\"    \r\n    $httpsListener.InstancePort
+              = $httpsinstanceport     \r\n    $httpsListener.SSLCertificateId = $SSLCertificateId
+              \   \r\n    New-ELBLoadBalancerListener -LoadBalancerName $CLBName -Listener
+              $httpsListener -Region $global:RegionId    \r\n    Set-ELBLoadBalancerPolicyOfListener
+              -LoadBalancerName $CLBName -LoadBalancerPort 443 -PolicyName $PolicyNames
+              -Region $global:RegionId    \r\n    \r\n    $httpListener = New-Object
+              Amazon.ElasticLoadBalancing.Model.Listener    \r\n    $httpListener.Protocol
+              = \"http\"    \r\n    $httpListener.LoadBalancerPort = 80    \r\n    $httpListener.InstanceProtocol
+              = \"http\"    \r\n    $httpListener.InstancePort = $httpinstanceport
+              \   \r\n    New-ELBLoadBalancerListener -LoadBalancerName $CLBName -Listener
+              $httpListener -Region $global:RegionId    \r\n    \r\n    # Write-Output
+              'Update health check URL'    \r\n    $healthcheckurl=\"HTTPS:\" + $httpsinstanceport
+              + \"/\" + $PortalWebAdaptorName + \"/portaladmin/healthCheck\"    \r\n
+              \   Set-ELBHealthCheck -LoadBalancerName $CLBName -HealthCheck_HealthyThreshold
+              3 -HealthCheck_UnhealthyThreshold 3 -HealthCheck_Target $healthcheckurl
+              -HealthCheck_Interval 30 -HealthCheck_Timeout 5 -Region $global:RegionId
+              \   \r\n    \r\n    # Write-Output 'Register instance with load balancer'
+              \   \r\n    Register-ELBInstanceWithLoadBalancer -LoadBalancerName $CLBName
+              -Instance @($PrimaryInstanceId,$StandbyInstanceId) -Region $global:RegionId
+              \   \r\n    \r\n    # Write-Output 'Retrieve ELB Security Groups'     \r\n
+              \   $ELBSecurityGroups = (Get-ELBLoadBalancer -LoadBalancerName $CLBName
+              -Region $global:RegionId).SecurityGroups;  \r\n  }  \r\n\r\n  if (([string]::IsNullOrEmpty($ALBName))
+              -and ([string]::IsNullOrEmpty($CLBName))) {    \r\n    $global:LogSequenceToken
+              = WriteErrorLog(\"Application/Classic load balancer with DNS name '\"
+              + $ELBDNSName + \"' does not found.\")    \r\n    throw \"Application/Classic
+              load balancer with DNS name '\" + $ELBDNSName + \"' does not found.\"
+              \ \r\n  }  \r\n  \r\n  if ($null -eq $ELBSecurityGroups) {    \r\n    $global:LogSequenceToken
+              = WriteErrorLog(\"Failed to retrieve Security groups from ELB with DNS
+              name '\" + $ELBDNSName + \"'.\")    \r\n    throw \"Failed to retrieve
+              Security groups from ELB with DNS name '\" + $ELBDNSName + \"'.\"  \r\n
+              \ }  \r\n  \r\n  try {    \r\n    # Write-Output 'Remove existing HTTP
+              rule from source security group'     \r\n    $ip = New-Object Amazon.EC2.Model.IpPermission
+              \   \r\n    $ip.IpProtocol = \"tcp\"    \r\n    $ip.FromPort = 80    \r\n
+              \   $ip.ToPort = 80    \r\n    $ip.IpRanges.Add(\"0.0.0.0/0\")    \r\n
+              \   Revoke-EC2SecurityGroupIngress -GroupId $SecurityGroup -IpPermission
+              $ip -Region $global:RegionId  \r\n  } catch { }  \r\n  \r\n  try {    \r\n
+              \   # Write-Output 'Remove existing HTTPS rule from source security
+              group'     \r\n    $ip = New-Object Amazon.EC2.Model.IpPermission    \r\n
+              \   $ip.IpProtocol = \"tcp\"    \r\n    $ip.FromPort = 443    \r\n    $ip.ToPort
+              = 443    \r\n    $ip.IpRanges.Add(\"0.0.0.0/0\")    \r\n    Revoke-EC2SecurityGroupIngress
+              -GroupId $SecurityGroup -IpPermission $ip -Region $global:RegionId  \r\n
+              \ } catch {  }  \r\n  \r\n  $httpipprotocol = \"tcp\"  \r\n  $httpsipprotocol
+              = \"tcp\"  \r\n  foreach ( $ELBSecurityGroup in $ELBSecurityGroups )
+              \ \r\n  {    \r\n    # Write-Output 'Add new HTTP rule in source security
+              group'    \r\n    try {      \r\n      $ug = New-Object Amazon.EC2.Model.UserIdGroupPair
+              \     \r\n      $ug.GroupId = $ELBSecurityGroup      \r\n      $ip2
+              = New-Object Amazon.EC2.Model.IpPermission      \r\n      $ip2.IpProtocol
+              = $httpipprotocol      \r\n      $ip2.FromPort = $httpinstanceport      \r\n
+              \     $ip2.ToPort = $httpinstanceport      \r\n      $ip2.UserIdGroupPairs
+              = $ug      \r\n      Grant-EC2SecurityGroupIngress -GroupId $SecurityGroup
+              -IpPermission $ip2 -Region $global:RegionId    \r\n    }    \r\n    catch
+              [Amazon.EC2.AmazonEC2Exception] {      \r\n      if (-not ($_.Exception.Message).contains('already
+              exists')) {        \r\n        Write-Error $_.Exception | format-list
+              -force        \r\n        $global:LogSequenceToken = WriteErrorLog($_.Exception)
+              \       \r\n        Write-Error 'Failed to update security groups.'
+              -ErrorAction Stop      \r\n      }    \r\n    }    \r\n    \r\n    #
+              Write-Output 'Add new HTTPS rule in source security group'     \r\n
+              \   try {      \r\n      $ug = New-Object Amazon.EC2.Model.UserIdGroupPair
+              \     \r\n      $ug.GroupId = $ELBSecurityGroup      \r\n      $ip2
+              = New-Object Amazon.EC2.Model.IpPermission      \r\n      $ip2.IpProtocol
+              = $httpsipprotocol      \r\n      $ip2.FromPort = $httpsinstanceport
+              \     \r\n      $ip2.ToPort = $httpsinstanceport      \r\n      $ip2.UserIdGroupPairs
+              = $ug      \r\n      Grant-EC2SecurityGroupIngress -GroupId $SecurityGroup
+              -IpPermission $ip2 -Region $global:RegionId    \r\n    }    \r\n    catch
+              [Amazon.EC2.AmazonEC2Exception] {      \r\n      if (-not ($_.Exception.Message).contains('already
+              exists')) {        \r\n        Write-Error $_.Exception | format-list
+              -force        \r\n        $global:LogSequenceToken = WriteErrorLog($_.Exception)
+              \       \r\n        Write-Error 'Failed to update security groups.'
+              -ErrorAction Stop      \r\n      }    \r\n    }  \r\n  }\r\n}\r\ncatch\r\n{
+              \ \r\n  Write-Error $_.Exception | format-list -force  \r\n  $global:LogSequenceToken
+              = WriteErrorLog(\"Failed to update load balancer configuration. \" +
+              $_.Exception)  \r\n  Write-Error 'Failed to update load balancer configuration'
+              -ErrorAction Stop\r\n}"
+            InputPayload:
+              ELBDNSName: "{{ELBDNSName}}"
+              SecurityGroupId: "{{SecurityGroupId}}"
+              PrimaryInstanceId: "{{PrimaryPortalInstanceId}}"
+              StandbyInstanceId: "{{StandbyPortalInstanceId}}"
+              PortalWebAdaptorName: "{{ELBContextName}}"
+              PortalTargetGroupArn: "{{PortalTargetGroupArn}}"
+              ActionName: ConfigureArcGISPortalELB
+              LogGroupName: "{{DeploymentLogs}}"
+              RegionId: "{{global:REGION}}"
+        - name: CheckInstanceState
+          action: aws:changeInstanceState
+          maxAttempts: 3
+          timeoutSeconds: 1800
+          onFailure: step:SignalFailure
+          nextStep: ConditionForOperatingSystem
+          inputs:
+            InstanceIds:
+            - "{{PrimaryPortalInstanceId}}"
+            - "{{StandbyPortalInstanceId}}"
+            CheckStateOnly: true
+            DesiredState: running
+        - name: ConditionForOperatingSystem
+          action: aws:branch
+          inputs:
+            Choices:
+            - NextStep: BootstrapWindowsNodes
+              Variable: "{{PlatformType}}"
+              EqualsIgnoreCase: Windows
+            - NextStep: BootstrapLinuxNodes
+              Variable: "{{PlatformType}}"
+              EqualsIgnoreCase: Linux
+            Default: SignalFailure
+        - name: BootstrapWindowsNodes
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConditionForFileServer
+          timeoutSeconds: 3600
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            Targets:
+            - Key: InstanceIds
+              Values:
+              - "{{PrimaryPortalInstanceId}}"
+              - "{{StandbyPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISWinBootstrapSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                cincClientUrl: "{{CincClientUrlWin}}"
+                cookbooksUrl: "{{CookbooksUrl}}"
+        - name: BootstrapLinuxNodes
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConditionForFileServer
+          timeoutSeconds: 3600
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            Targets:
+            - Key: InstanceIds
+              Values:
+              - "{{PrimaryPortalInstanceId}}"
+              - "{{StandbyPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISLinBootstrapSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                awsCliBundleUrl: "{{AWSCliBundleUrl}}"
+                cincClientUrl: "{{CincClientUrlLin}}"
+                cookbooksUrl: "{{CookbooksUrl}}"
+        - name: ConditionForFileServer
+          action: aws:branch
+          inputs:
+            Choices:
+            - And:
+              - Variable: "{{PlatformType}}"
+                EqualsIgnoreCase: Windows
+              - Variable: "{{ConfigStoreType}}"
+                EqualsIgnoreCase: FileSystem
+              NextStep: CheckWindowsFileServerInstanceState
+            - And:
+              - Variable: "{{PlatformType}}"
+                EqualsIgnoreCase: Linux
+              - Variable: "{{ConfigStoreType}}"
+                EqualsIgnoreCase: FileSystem
+              NextStep: CheckLinuxFileServerInstanceState
+            - And:
+              - Variable: "{{PlatformType}}"
+                EqualsIgnoreCase: Windows
+              - Variable: "{{ConfigStoreType}}"
+                EqualsIgnoreCase: CloudStore
+              NextStep: InstallArcGISPortalOnWindows
+            - And:
+              - Variable: "{{PlatformType}}"
+                EqualsIgnoreCase: Linux
+              - Variable: "{{ConfigStoreType}}"
+                EqualsIgnoreCase: CloudStore
+              NextStep: InstallArcGISPortalOnLinux
+            Default: SignalFailure
+        - name: CheckWindowsFileServerInstanceState
+          action: aws:changeInstanceState
+          maxAttempts: 3
+          timeoutSeconds: 1800
+          onFailure: step:SignalFailure
+          nextStep: BootstrapWindowsFileServer
+          inputs:
+            InstanceIds:
+            - "{{FileServerInstanceId}}"
+            CheckStateOnly: true
+            DesiredState: running
+        - name: CheckLinuxFileServerInstanceState
+          action: aws:changeInstanceState
+          maxAttempts: 3
+          timeoutSeconds: 1800
+          onFailure: step:SignalFailure
+          nextStep: BootstrapLinuxFileServer
+          inputs:
+            InstanceIds:
+            - "{{FileServerInstanceId}}"
+            CheckStateOnly: true
+            DesiredState: running
+        - name: BootstrapWindowsFileServer
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConfigureArcGISFileServerOnWindows
+          timeoutSeconds: 3600
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            Targets:
+            - Key: InstanceIds
+              Values:
+              - "{{FileServerInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISWinBootstrapSSMDocumentPath}}"
+              documentParameters:
+                cincClientUrl: "{{CincClientUrlWin}}"
+                cookbooksUrl: "{{CookbooksUrl}}"
+        - name: BootstrapLinuxFileServer
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConfigureArcGISFileServerOnLinux
+          timeoutSeconds: 3600
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            Targets:
+            - Key: InstanceIds
+              Values:
+              - "{{FileServerInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISLinBootstrapSSMDocumentPath}}"
+              documentParameters:
+                awsCliBundleUrl: "{{AWSCliBundleUrl}}"
+                cincClientUrl: "{{CincClientUrlLin}}"
+                cookbooksUrl: "{{CookbooksUrl}}"
+        - name: ConfigureArcGISFileServerOnWindows
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: InstallArcGISPortalOnWindows
+          timeoutSeconds: 3600
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            InstanceIds:
+            - "{{FileServerInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISFileServerWinDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                arcgisDeploymentTemplate: "{{ArcGISDeploymentTemplate}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+                runAsUserPassword: "{{RunAsUserPassword}}"
+        - name: ConfigureArcGISFileServerOnLinux
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: InstallArcGISPortalOnLinux
+          timeoutSeconds: 3600
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            InstanceIds:
+            - "{{FileServerInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISFileServerLinDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                arcgisDeploymentTemplate: "{{ArcGISDeploymentTemplate}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+        - name: InstallArcGISPortalOnWindows
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConfigureArcGISPrimaryPortalOnWindows
+          timeoutSeconds: 10800
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            Targets:
+            - Key: InstanceIds
+              Values:
+              - "{{PrimaryPortalInstanceId}}"
+              - "{{StandbyPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISPortalInstallWinSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+                runAsUserPassword: "{{RunAsUserPassword}}"
+        - name: InstallArcGISPortalOnLinux
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConfigureArcGISPrimaryPortalOnLinux
+          timeoutSeconds: 10800
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            Targets:
+            - Key: InstanceIds
+              Values:
+              - "{{PrimaryPortalInstanceId}}"
+              - "{{StandbyPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISPortalInstallLinSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+        - name: ConfigureArcGISPrimaryPortalOnWindows
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConfigureArcGISStandbyPortalOnWindows
+          timeoutSeconds: 10800
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            InstanceIds:
+            - "{{PrimaryPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISPortalWinSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                machineRole: arcgis-portal-primary
+                deploymentBucket: "{{DeploymentBucket}}"
+                portalLicenseFile: "{{PortalLicenseFile}}"
+                userLicenseTypeId: "{{UserLicenseTypeId}}"
+                siteAdmin: "{{SiteAdmin}}"
+                siteAdminPassword: "{{SiteAdminPassword}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+                runAsUserPassword: "{{RunAsUserPassword}}"
+                configStoreType: "{{ConfigStoreType}}"
+                portalContentStoreBucket: "{{PortalContentStoreBucket}}"
+                siteDomain: "{{SiteDomain}}"
+                webadaptorName: "{{WebadaptorName}}"
+                sslCertificateFile: "{{SSLCertificateFile}}"
+                sslCertificatePassword: "{{SSLCertificatePassword}}"
+                fileServerIP: "{{FileServerIP}}"
+        - name: ConfigureArcGISPrimaryPortalOnLinux
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: ConfigureArcGISStandbyPortalOnLinux
+          timeoutSeconds: 10800
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            InstanceIds:
+            - "{{PrimaryPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISPortalLinSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                machineRole: arcgis-portal-primary
+                deploymentBucket: "{{DeploymentBucket}}"
+                portalLicenseFile: "{{PortalLicenseFile}}"
+                userLicenseTypeId: "{{UserLicenseTypeId}}"
+                siteAdmin: "{{SiteAdmin}}"
+                siteAdminPassword: "{{SiteAdminPassword}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+                configStoreType: "{{ConfigStoreType}}"
+                portalContentStoreBucket: "{{PortalContentStoreBucket}}"
+                siteDomain: "{{SiteDomain}}"
+                webadaptorName: "{{WebadaptorName}}"
+                sslCertificateFile: "{{SSLCertificateFile}}"
+                sslCertificatePassword: "{{SSLCertificatePassword}}"
+                fileServerIP: "{{FileServerIP}}"
+        - name: ConfigureArcGISStandbyPortalOnWindows
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: SignalSuccess
+          timeoutSeconds: 10800
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            InstanceIds:
+            - "{{StandbyPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISPortalWinSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                machineRole: arcgis-portal-standby
+                deploymentBucket: "{{DeploymentBucket}}"
+                portalLicenseFile: "{{PortalLicenseFile}}"
+                userLicenseTypeId: "{{UserLicenseTypeId}}"
+                siteAdmin: "{{SiteAdmin}}"
+                siteAdminPassword: "{{SiteAdminPassword}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+                runAsUserPassword: "{{RunAsUserPassword}}"
+                configStoreType: "{{ConfigStoreType}}"
+                portalContentStoreBucket: "{{PortalContentStoreBucket}}"
+                siteDomain: "{{SiteDomain}}"
+                webadaptorName: "{{WebadaptorName}}"
+                sslCertificateFile: "{{SSLCertificateFile}}"
+                sslCertificatePassword: "{{SSLCertificatePassword}}"
+                primaryServerIP: "{{PrimaryServerIP}}"
+                fileServerIP: "{{FileServerIP}}"
+        - name: ConfigureArcGISStandbyPortalOnLinux
+          action: aws:runCommand
+          onFailure: step:SignalFailure
+          nextStep: SignalSuccess
+          timeoutSeconds: 10800
+          inputs:
+            DocumentName: "{{ExecuteRemoteSSMDocumentName}}"
+            InstanceIds:
+            - "{{StandbyPortalInstanceId}}"
+            CloudWatchOutputConfig:
+              CloudWatchOutputEnabled: 'true'
+              CloudWatchLogGroupName: "{{DeploymentLogs}}"
+            Parameters:
+              documentUrl: "{{ArcGISPortalLinSSMDocumentPath}}"
+              documentParameters:
+                arcgisVersion: "{{ArcGISVersion}}"
+                machineRole: arcgis-portal-standby
+                deploymentBucket: "{{DeploymentBucket}}"
+                portalLicenseFile: "{{PortalLicenseFile}}"
+                userLicenseTypeId: "{{UserLicenseTypeId}}"
+                siteAdmin: "{{SiteAdmin}}"
+                siteAdminPassword: "{{SiteAdminPassword}}"
+                runAsUserUserName: "{{RunAsUserUserName}}"
+                configStoreType: "{{ConfigStoreType}}"
+                portalContentStoreBucket: "{{PortalContentStoreBucket}}"
+                siteDomain: "{{SiteDomain}}"
+                webadaptorName: "{{WebadaptorName}}"
+                sslCertificateFile: "{{SSLCertificateFile}}"
+                sslCertificatePassword: "{{SSLCertificatePassword}}"
+                primaryServerIP: "{{PrimaryServerIP}}"
+                fileServerIP: "{{FileServerIP}}"
+        - name: SignalFailure
+          action: aws:executeScript
+          isEnd: true
+          inputs:
+            Runtime: PowerShell Core 6.0
+            Script: "$inputPayload = $env:InputPayload | ConvertFrom-Json;\r\n\r\n$StackName
+              = $inputPayload.StackName;\r\n$WaitCondition = $inputPayload.WaitCondition;\r\n$UniqueId
+              = $inputPayload.UniqueId;\r\n$Status = $inputPayload.Status;\r\n\r\n$ActionName
+              = $inputPayload.ActionName;\r\n$LogGroupName = $inputPayload.LogGroupName;\r\n$global:RegionId
+              = $inputPayload.RegionId;\r\n\r\n$guid = New-Guid;\r\n$LogStreamName
+              = \"$guid/$ActionName/stderr\"\r\n$global:LogSequenceToken = \"\"\r\n\r\nInstall-Module
+              AWS.Tools.CloudFormation -Force\r\nInstall-Module AWS.Tools.CloudWatchLogs
+              -Force\r\n\r\nImport-Module AWS.Tools.CloudFormation\r\nImport-Module
+              AWS.Tools.CloudWatchLogs\r\n\r\nfunction WriteErrorLog($errormessage)
+              {\r\n  Write-Error $errormessage | format-list -force\r\n  if ([string]::IsNullOrEmpty($global:LogSequenceToken))
+              {\r\n    $splat = @{\r\n      LogGroupName = $LogGroupName\r\n      LogStreamName
+              =  $LogStreamName\r\n    }\r\n    New-CWLLogStream @splat -Region $global:RegionId\r\n\r\n
+              \   $logEntry = New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n    }\r\n
+              \   $global:LogSequenceToken = Write-CWLLogEvent @splat -Region $global:RegionId\r\n
+              \ } else {\r\n    $logEntry =  New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n      SequenceToken
+              = $global:LogSequenceToken\r\n    }\r\n    $global:LogSequenceToken
+              = Write-CWLLogEvent @splat -Region $global:RegionId\r\n  }\r\n  return
+              $global:LogSequenceToken\r\n}\r\n\r\nif (-not ([string]::IsNullOrEmpty($WaitCondition)))\r\n{\r\n
+              \ try\r\n  {\r\n    $stackstatus=((Get-CFNStack -StackName $StackName
+              -Region $global:RegionId).StackStatus).Value\r\n    if ($stackstatus
+              -eq 'CREATE_IN_PROGRESS')\r\n    {\r\n      Send-CFNResourceSignal -StackName
+              $StackName -LogicalResourceId $WaitCondition -Status $Status -UniqueId
+              $UniqueId -Region $global:RegionId\r\n      # Write-Host 'Sent signal
+              back to cloudformation stack successfully'\r\n    }\r\n  }\r\n  catch\r\n
+              \ {\r\n    Write-Error $_.Exception | format-list -force\r\n    $global:LogSequenceToken
+              = WriteErrorLog('Failed to send signal back to CloudFormation stack.
+              ' + $_.Exception)\r\n    Write-Error 'Failed to send signal back to
+              CloudFormation stack.' -ErrorAction Stop\r\n  }\r\n}"
+            InputPayload:
+              StackName: "{{StackName}}"
+              UniqueId: "{{PrimaryPortalInstanceId}}"
+              WaitCondition: "{{WaitCondition}}"
+              Status: FAILURE
+              ActionName: SignalFailure
+              LogGroupName: "{{DeploymentLogs}}"
+              RegionId: "{{global:REGION}}"
+        - name: SignalSuccess
+          action: aws:executeScript
+          isEnd: true
+          inputs:
+            Runtime: PowerShell Core 6.0
+            Script: "$inputPayload = $env:InputPayload | ConvertFrom-Json;\r\n\r\n$StackName
+              = $inputPayload.StackName;\r\n$WaitCondition = $inputPayload.WaitCondition;\r\n$UniqueId
+              = $inputPayload.UniqueId;\r\n$Status = $inputPayload.Status;\r\n\r\n$ActionName
+              = $inputPayload.ActionName;\r\n$LogGroupName = $inputPayload.LogGroupName;\r\n$global:RegionId
+              = $inputPayload.RegionId;\r\n\r\n$guid = New-Guid;\r\n$LogStreamName
+              = \"$guid/$ActionName/stderr\"\r\n$global:LogSequenceToken = \"\"\r\n\r\nInstall-Module
+              AWS.Tools.CloudFormation -Force\r\nInstall-Module AWS.Tools.CloudWatchLogs
+              -Force\r\n\r\nImport-Module AWS.Tools.CloudFormation\r\nImport-Module
+              AWS.Tools.CloudWatchLogs\r\n\r\nfunction WriteErrorLog($errormessage)
+              {\r\n  Write-Error $errormessage | format-list -force\r\n  if ([string]::IsNullOrEmpty($global:LogSequenceToken))
+              {\r\n    $splat = @{\r\n      LogGroupName = $LogGroupName\r\n      LogStreamName
+              =  $LogStreamName\r\n    }\r\n    New-CWLLogStream @splat -Region $global:RegionId\r\n\r\n
+              \   $logEntry = New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n    }\r\n
+              \   $global:LogSequenceToken = Write-CWLLogEvent @splat -Region $global:RegionId\r\n
+              \ } else {\r\n    $logEntry =  New-Object Amazon.CloudWatchLogs.Model.InputLogEvent\r\n
+              \   $logEntry.Message = $errormessage\r\n    $logEntry.Timestamp = (Get-Date).ToUniversalTime()\r\n\r\n
+              \   $splat = @{\r\n      LogEvent      = $logEntry\r\n      LogGroupName
+              \ = $LogGroupName\r\n      LogStreamName = $LogStreamName\r\n      SequenceToken
+              = $global:LogSequenceToken\r\n    }\r\n    $global:LogSequenceToken
+              = Write-CWLLogEvent @splat -Region $global:RegionId\r\n  }\r\n  return
+              $global:LogSequenceToken\r\n}\r\n\r\nif (-not ([string]::IsNullOrEmpty($WaitCondition)))\r\n{\r\n
+              \ try\r\n  {\r\n    $stackstatus=((Get-CFNStack -StackName $StackName
+              -Region $global:RegionId).StackStatus).Value\r\n    if ($stackstatus
+              -eq 'CREATE_IN_PROGRESS')\r\n    {\r\n      Send-CFNResourceSignal -StackName
+              $StackName -LogicalResourceId $WaitCondition -Status $Status -UniqueId
+              $UniqueId -Region $global:RegionId\r\n      # Write-Host 'Sent signal
+              back to cloudformation stack successfully'\r\n    }\r\n  }\r\n  catch\r\n
+              \ {\r\n    Write-Error $_.Exception | format-list -force\r\n    $global:LogSequenceToken
+              = WriteErrorLog('Failed to send signal back to CloudFormation stack.
+              ' + $_.Exception)\r\n    Write-Error 'Failed to send signal back to
+              CloudFormation stack.' -ErrorAction Stop\r\n  }\r\n}"
+            InputPayload:
+              StackName: "{{StackName}}"
+              UniqueId: "{{PrimaryPortalInstanceId}}"
+              WaitCondition: "{{WaitCondition}}"
+              Status: SUCCESS
+              ActionName: SignalSuccess
+              LogGroupName: "{{DeploymentLogs}}"
+              RegionId: "{{global:REGION}}"
+      DocumentType: Automation
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: Automation
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+  ArcGISPortalHAWaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn:
+    - PortalForArcGISPrimaryEC2Instance
+    - PortalForArcGISStandbyEC2Instance
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT4H
+  ArcGISPortalHAAssociation:
+    Type: AWS::SSM::Association
+    Properties:
+      Name:
+        Ref: ArcGISPortalHAAutomation
+      Parameters:
+        AutomationAssumeRole:
+        - Fn::GetAtt:
+          - ArcGISEnterpriseIAMRole
+          - Arn
+        PlatformType:
+        - Ref: PlatformType
+        AWSCliBundleUrl:
+        - https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        CincClientUrlWin:
+        - https://arcgisstore-us-east-1.s3.amazonaws.com/cincclient/cinc-18.4.2-1-x64.msi
+        CincClientUrlLin:
+        - https://omnitruck.cinc.sh/install.sh
+        CookbooksUrl:
+        - https://arcgisstore.s3.amazonaws.com/1130/cookbooks/arcgis-5.0.0-cookbooks.tar.gz
+        ArcGISVersion:
+        - '11.3'
+        ArcGISDeploymentTemplate:
+        - arcgis-portal
+        DeploymentBucket:
+        - Ref: DeploymentBucket
+        PortalLicenseFile:
+        - Ref: PortalLicenseFileKeyName
+        UserLicenseTypeId:
+        - Ref: UserLicenseTypeId
+        SiteAdmin:
+        - Ref: SiteadminUserName
+        SiteAdminPassword:
+        - Ref: SiteadminUserPassword
+        RunAsUserPassword:
+        - Ref: arcgisUserPassword
+        ConfigStoreType:
+        - Ref: ConfigStoreType
+        PortalContentStoreBucket:
+        - Fn::If:
+          - UseCloudStore
+          - Ref: PortalContentBucket
+          - ''
+        SiteDomain:
+        - Ref: SiteDomain
+        WebadaptorName:
+        - Ref: PortalWebadaptorName
+        SSLCertificateFile:
+        - Ref: SSLCertificateFileKeyName
+        SSLCertificatePassword:
+        - Ref: SSLCertificatePassword
+        ExecuteRemoteSSMDocumentName:
+        - Ref: ArcGISPortalHACommandDocument
+        ArcGISWinBootstrapSSMDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-Bootstrap-Windows.json
+        ArcGISFileServerWinDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-FileServer-Windows.json
+        ArcGISPortalInstallWinSSMDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-ArcGISPortal-Windows-Install.json
+        ArcGISPortalWinSSMDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-ArcGISPortal-Windows.json
+        ArcGISLinBootstrapSSMDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-Bootstrap-Linux.json
+        ArcGISFileServerLinDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-FileServer-Linux.json
+        ArcGISPortalInstallLinSSMDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-ArcGISPortal-Linux-Install.json
+        ArcGISPortalLinSSMDocumentPath:
+        - https://arcgisstore.s3.us-east-1.amazonaws.com/1130/ssmdocuments/ESRI-ArcGISPortal-Linux.json
+        FileServerIP:
+        - Fn::If:
+          - UseFileSystem
+          - Fn::GetAtt:
+            - FileServerEC2Instance
+            - PrivateIp
+          - ''
+        PrimaryServerIP:
+        - Fn::GetAtt:
+          - PortalForArcGISPrimaryEC2Instance
+          - PrivateIp
+        ELBDNSName:
+        - Ref: ELBDNSName
+        ELBContextName:
+        - Fn::If:
+          - WebadaptorCondition
+          - arcgis
+          - Ref: PortalWebadaptorName
+        SecurityGroupId:
+        - Ref: SecurityGroup
+        PortalTargetGroupArn:
+        - Ref: PortalTargetGroup
+        FileServerInstanceId:
+        - Fn::If:
+          - UseFileSystem
+          - Ref: FileServerEC2Instance
+          - ''
+        PrimaryPortalInstanceId:
+        - Ref: PortalForArcGISPrimaryEC2Instance
+        StandbyPortalInstanceId:
+        - Ref: PortalForArcGISStandbyEC2Instance
+        DeploymentLogs:
+        - Ref: DeploymentLogs
+        StackName:
+        - Ref: AWS::StackName
+        WaitCondition:
+        - ArcGISPortalHAWaitCondition
+    DependsOn:
+    - PortalForArcGISPrimaryEC2Instance
+    - PortalForArcGISStandbyEC2Instance
+  DeletePortalELBRulesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: "import json\nimport boto3\nimport cfnresponse\n\ndef lambda_handler(event,
+          context):\n    print('Received request:\\n%s' % json.dumps(event, indent=4))\n
+          \   properties = event['ResourceProperties']\n    if event['RequestType']
+          == 'Delete':\n        response = {}\n        try:\n            elb_dns =
+          properties['ELBDNSName']\n            target_group_arn = properties['TargetGroupArn']\n
+          \           elbv2 = boto3.client('elbv2')\n            elb_arn=\"\"\n            try:
+          \n                elbs = elbv2.describe_load_balancers()['LoadBalancers']\n
+          \               for elb in elbs:\n                    if elb['DNSName']
+          == elb_dns and elb['Type'] == 'application':\n                        elb_arn
+          = elb['LoadBalancerArn']\n            except Exception as e:\n                response['ErrorMessage']
+          = 'ELB V2 with DNS Name {} does not found. {}'.format(elb_dns, e)\n                cfnresponse.send(event,
+          context, cfnresponse.SUCCESS, response)\n                return\n\n            print('ELB
+          ARN {}.'.format(elb_arn))\n            if not elb_arn:\n                response['ErrorMessage']
+          = 'ELB V2 with DNS Name {} does not found.'.format(elb_dns)\n                cfnresponse.send(event,
+          context, cfnresponse.SUCCESS, response)\n                return\n\n            elblisteners
+          = elbv2.describe_listeners(\n                        LoadBalancerArn=elb_arn\n
+          \                   )['Listeners']\n\n            httpslistenersarn=\"\"\n
+          \           for elblistener in elblisteners:\n                if elblistener['Protocol']
+          == 'HTTPS' and elblistener['Port'] == 443:\n                    httpslistenersarn=elblistener['ListenerArn']\n\n
+          \           if not httpslistenersarn:\n                response['ErrorMessage']
+          = 'ELB {} does not have listener configured on port [443]'.format(elb_arn)\n
+          \               cfnresponse.send(event, context, cfnresponse.SUCCESS, response)\n
+          \               return\n            \n            print('HTTPS Listener
+          ARN {}.'.format(httpslistenersarn))\n            elbrules = elbv2.describe_rules(\n
+          \               ListenerArn=httpslistenersarn\n            )\n\n            rule_arns
+          = []\n            for elbrule in elbrules['Rules']:\n                for
+          action in elbrule['Actions']:\n                    if action['Type'] ==
+          'forward':\n                        if action['TargetGroupArn'] == target_group_arn:\n
+          \                           rule_arns.append(elbrule['RuleArn'])\n\n            for
+          rule_arn in rule_arns:\n                response = elbv2.delete_rule(\n
+          \                   RuleArn=rule_arn\n                )\n\n            response['Message']
+          = 'Rules from ELB {} deleted successfully.'.format(elb_arn)\n        except
+          Exception as e:\n            response['ErrorMessage'] = 'Error occurred
+          while deleting rules from ELB {}. {}'.format(elb_dns, e)\n            cfnresponse.send(event,
+          context, cfnresponse.SUCCESS, response)\n        else:\n            cfnresponse.send(event,
+          context, cfnresponse.SUCCESS, response)\n    elif event['RequestType'] in
+          ['Create', 'Update']:\n        cfnresponse.send(event, context, cfnresponse.SUCCESS,
+          {})\n"
+      Role:
+        Fn::GetAtt:
+        - ArcGISEnterpriseIAMRole
+        - Arn
+      Description: Delete the Portal rules from ELB.
+      Handler: index.lambda_handler
+      Runtime: python3.10
+      Tags:
+      - Key: arcgisenterprise:cloudformation:logical-id
+        Value: DeletePortalELBRulesFunction
+      - Key: arcgisenterprise:cloudformation:stack-id
+        Value:
+          Ref: AWS::StackId
+      - Key: arcgisenterprise:cloudformation:stack-name
+        Value:
+          Ref: AWS::StackName
+      - Key: arcgisenterprise:cloudformation:template-name
+        Value: arcgis-portal-ha.template.json
+      - Key: arcgisenterprise:cloudformation:template-provider
+        Value: Esri
+      Timeout: 60
+    Condition: ELBDNSNameCondition
+  DeletePortalELBRules:
+    Type: Custom::DeletePortalELBRules
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - DeletePortalELBRulesFunction
+        - Arn
+      ELBDNSName:
+        Ref: ELBDNSName
+      TargetGroupArn:
+        Ref: PortalTargetGroup
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Condition: ELBDNSNameCondition
+Outputs:
+  PortalHomeAppURL:
+    Description: Portal for ArcGIS Home App URL
+    Value:
+      Fn::If:
+      - WebadaptorCondition
+      - Fn::Join:
+        - ''
+        - - https://
+          - Ref: SiteDomain
+          - "/arcgis/home"
+      - Fn::Join:
+        - ''
+        - - https://
+          - Ref: SiteDomain
+          - "/"
+          - Ref: PortalWebadaptorName
+          - "/home"
+  DeploymentLogsURL:
+    Description: Deployment Logs
+    Value:
+      Fn::Join:
+      - ''
+      - - https://console.aws.amazon.com/cloudwatch/home?region=
+        - Ref: AWS::Region
+        - "#logStream:group="
+        - Ref: DeploymentLogs
+  StopStackFunctionName:
+    Description: Lambda function used to stop all EC2 instances in the stack.
+    Value:
+      Fn::Join:
+      - ''
+      - - https://console.aws.amazon.com/lambda/home?region=
+        - Ref: AWS::Region
+        - "#/functions/"
+        - Ref: StopStackFunction
+  StartStackFunctionName:
+    Description: Lambda function used to start all EC2 instances in the stack.
+    Value:
+      Fn::Join:
+      - ''
+      - - https://console.aws.amazon.com/lambda/home?region=
+        - Ref: AWS::Region
+        - "#/functions/"
+        - Ref: StartStackFunction
