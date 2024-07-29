@@ -1,0 +1,196 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  MyArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'my-artifact-bucket-${AWS::AccountId}-${AWS::Region}'
+  MyCodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: my-codecommit-repo
+
+  MyPipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: my-pipeline-role-new
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeCommitAccess-new
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::my-artifact-bucket-${AWS::AccountId}-${AWS::Region}/*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:UpdateStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:SetStackPolicy
+                  - cloudformation:ValidateTemplate
+                Resource: '*'
+              - Effect: Allow
+                Action:                
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:ListBranches
+                  - codecommit:ListRepositories
+                  - codecommit:BatchGetRepositories
+                  - codecommit:GetObject
+                  - codecommit:GetUploadArchiveStatus
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - codecommit:GetDifferences
+                  - codecommit:GetFile
+                  - codecommit:GetFolder
+                  - codecommit:GetMergeConflicts
+                  - codecommit:GetPullRequest
+                  - codecommit:GetRepositoryTriggers
+                  - codecommit:GitPull
+                  - codecommit:MergePullRequestByFastForward
+                  - codecommit:TestRepositoryTriggers
+                  - codecommit:CancelUploadArchive
+                  - codecommit:UploadArchive
+                Resource: '*'
+        - PolicyName: CodeBuildAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource: !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/my-codebuild-project"
+
+  MyPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: my-pipeline
+      RoleArn: !GetAtt MyPipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref MyArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: '1'
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: my-codecommit-repo
+                BranchName: main
+              OutputArtifacts:
+                - Name: MyAppSource
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: my-codebuild-project
+              InputArtifacts:
+                - Name: MyAppSource
+              OutputArtifacts:
+                - Name: MyBuiltArtifact
+
+  MyCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: my-codebuild-role-new
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudFormationAccess-new
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action: 
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: '*'
+
+  MyCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: my-codebuild-project
+      ServiceRole: !GetAtt MyCodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:4.0
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref "AWS::Region"
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.8
+            build:
+              commands:
+                - |
+                  for file in $(find . -name "*.yaml"); do
+                    stack_name=$(basename "$file" .yaml)
+                    if aws cloudformation describe-stacks --stack-name "$stack_name" >/dev/null 2>&1; then
+                      echo "Stack $stack_name already exists. Updating..."
+                      aws cloudformation update-stack --stack-name "$stack_name" --template-body file://"$file"
+                    else
+                      echo "Creating stack $stack_name..."
+                      if ! aws cloudformation create-stack --stack-name "$stack_name" --template-body file://"$file"; then
+                        error_code=$?
+                        if [ "$error_code" -eq 255 ]; then
+                          echo "Stack $stack_name already exists. Skipping creation..."
+                        else
+                          exit $error_code
+                        fi
+                      fi
+                    fi
+                  done
+            post_build:
+              commands:
+                - echo "Stack creation/update completed for all YAML files"
